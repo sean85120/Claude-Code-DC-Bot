@@ -40,6 +40,12 @@ export interface BotConfig {
   approvalTimeoutMs: number;
   /** Timeout in ms for idle waiting_input sessions — auto-archive after this period (default: 30 min) */
   sessionIdleTimeoutMs: number;
+  /** Name of the daily summary channel (default: "claude-daily-summary") */
+  summaryChannelName: string;
+  /** Hour of day (UTC) to post the daily summary (0-23, default: 0 = midnight) */
+  summaryHourUtc: number;
+  /** Enable/disable daily summaries (default: true) */
+  summaryEnabled: boolean;
 }
 
 // ─── Session ────────────────────────────────────────
@@ -144,6 +150,43 @@ export interface TokenUsage {
   cacheWrite: number;
   total: number;
   costUsd: number;
+}
+
+// ─── Daily Summary ────────────────────────────────────
+
+/** A single completed session record for daily tracking */
+export interface CompletedSessionRecord {
+  threadId: string;
+  userId: string;
+  projectName: string;
+  projectPath: string;
+  promptText: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  toolCount: number;
+  usage: TokenUsage;
+  costUsd: number;
+  model: string;
+}
+
+/** Daily aggregated data (one entry per calendar day) */
+export interface DailyRecord {
+  date: string;
+  sessions: CompletedSessionRecord[];
+  totalCostUsd: number;
+  totalUsage: TokenUsage;
+  totalDurationMs: number;
+}
+
+/** Summary stats grouped by repository */
+export interface RepoSummary {
+  projectName: string;
+  projectPath: string;
+  sessions: CompletedSessionRecord[];
+  totalSessions: number;
+  totalCostUsd: number;
+  totalUsage: TokenUsage;
 }
 
 // ─── Display ──────────────────────────────────────────
