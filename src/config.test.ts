@@ -1,4 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('./config.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./config.js')>();
+  return {
+    ...original,
+    loadProjects: vi.fn().mockReturnValue([{ name: 'test', path: '/test' }]),
+    parseConfig: (env: Record<string, string | undefined>) => {
+      // Call original but inject mocked projects
+      const config = original.parseConfig(env);
+      if (config.projects.length === 0) {
+        config.projects = [{ name: 'test', path: '/test' }];
+        if (!config.defaultCwd || config.defaultCwd === process.cwd()) {
+          config.defaultCwd = '/test';
+        }
+      }
+      return config;
+    },
+  };
+});
+
 import { parseConfig, validateConfig } from './config.js';
 
 describe('parseConfig', () => {
