@@ -1,7 +1,11 @@
 import { ChannelType, type Client, type TextChannel } from 'discord.js';
 
+/** Prefix for auto-created project channels to avoid collisions with existing channels */
+const CHANNEL_PREFIX = 'claude-';
+
 /**
  * Normalize a project name into a valid Discord channel name.
+ * - Adds "claude-" prefix to avoid collisions with existing channels
  * - Lowercase
  * - Replace non-alphanumeric characters (except hyphens) with hyphens
  * - Collapse consecutive hyphens
@@ -9,16 +13,20 @@ import { ChannelType, type Client, type TextChannel } from 'discord.js';
  * - Truncate to 100 characters (Discord limit)
  *
  * @param name - The project name
- * @returns A valid Discord channel name
+ * @returns A valid Discord channel name with "claude-" prefix
  */
 export function normalizeChannelName(name: string): string {
-  return name
+  const normalized = name
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 100);
+    .replace(/^-|-$/g, '');
+  if (!normalized) return '';
+  return `${CHANNEL_PREFIX}${normalized}`.slice(0, 100);
 }
+
+/** In-flight channel creation promises, keyed by normalized channel name */
+const pendingCreations = new Map<string, Promise<{ channelId: string; channel: TextChannel; created: boolean }>>();
 
 /**
  * Resolve the target Discord text channel for a project.
@@ -26,6 +34,7 @@ export function normalizeChannelName(name: string): string {
  * - If `isBotRepo` is true, returns the general channel directly.
  * - Otherwise, searches for an existing channel matching the normalized project name.
  * - If no channel exists, creates one in the same category as the general channel.
+ * - Uses a per-name mutex to prevent duplicate channel creation under concurrent requests.
  *
  * @param client - Discord.js client
  * @param guildId - The Discord guild (server) ID
@@ -55,16 +64,46 @@ export async function resolveProjectChannel(
     throw new Error(`Invalid project name: "${projectName}" produces an empty channel name`);
   }
 
+  // Deduplicate concurrent creation requests for the same channel name
+  const existing = pendingCreations.get(channelName);
+  if (existing) {
+    return existing;
+  }
+
+  const promise = resolveOrCreateChannel(client, guildId, generalChannelId, channelName, projectName);
+  pendingCreations.set(channelName, promise);
+  try {
+    return await promise;
+  } finally {
+    pendingCreations.delete(channelName);
+  }
+}
+
+async function resolveOrCreateChannel(
+  client: Client,
+  guildId: string,
+  generalChannelId: string,
+  channelName: string,
+  projectName: string,
+): Promise<{ channelId: string; channel: TextChannel; created: boolean }> {
   const guild = await client.guilds.fetch(guildId);
 
-  // Search for existing channel by name
+  // Search cache first, then fetch
+  const cached = guild.channels.cache.find(
+    (ch) => ch.type === ChannelType.GuildText && ch.name === channelName,
+  );
+  if (cached) {
+    return { channelId: cached.id, channel: cached as TextChannel, created: false };
+  }
+
+  // Fetch from API in case cache is stale
   const allChannels = await guild.channels.fetch();
-  const existing = allChannels.find(
+  const found = allChannels.find(
     (ch) => ch !== null && ch.type === ChannelType.GuildText && ch.name === channelName,
   );
 
-  if (existing) {
-    return { channelId: existing.id, channel: existing as TextChannel, created: false };
+  if (found) {
+    return { channelId: found.id, channel: found as TextChannel, created: false };
   }
 
   // Get the category of the general channel so new channels go in the same place

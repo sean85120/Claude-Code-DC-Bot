@@ -74,8 +74,7 @@ export async function execute(
   rateLimitStore?: RateLimitStore,
   client?: Client,
 ): Promise<void> {
-  const parentId = interaction.channel && 'parentId' in interaction.channel ? interaction.channel.parentId : null;
-  const auth = canExecuteCommand(interaction.user.id, interaction.channelId, config, parentId);
+  const auth = canExecuteCommand(interaction.user.id, config);
   if (!auth.allowed) {
     await interaction.reply({ content: `❌ ${auth.reason}`, flags: [MessageFlags.Ephemeral] });
     return;

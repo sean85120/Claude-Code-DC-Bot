@@ -237,7 +237,7 @@ async function main() {
 
   // Periodic cleanup of idle waiting_input sessions
   const CLEANUP_INTERVAL_MS = 60_000; // Check every minute
-  setInterval(async () => {
+  const cleanupIntervalId = setInterval(async () => {
     const now = Date.now();
     const activeSessions = store.getAllActiveSessions();
 
@@ -301,6 +301,8 @@ async function main() {
   // Graceful shutdown
   function shutdown() {
     log.info('Shutdown signal received, shutting down...');
+
+    clearInterval(cleanupIntervalId);
 
     // Abort all active sessions
     const activeSessions = store.getAllActiveSessions();

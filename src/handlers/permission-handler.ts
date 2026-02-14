@@ -18,6 +18,64 @@ export interface PermissionHandlerDeps {
   approvalTimeoutMs: number;
 }
 
+/** Format a timeout duration for human-readable display */
+function formatTimeoutDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds} seconds`;
+  const minutes = Math.round(ms / 60000);
+  return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+}
+
+/** Wire up timeout and abort-signal auto-deny for a pending approval */
+function setupAutoCancel(opts: {
+  store: StateStore;
+  threadId: string;
+  thread: ThreadChannel;
+  toolName: string;
+  messageId: string;
+  approvalTimeoutMs: number;
+  signal?: AbortSignal;
+  onTimeout?: () => void;
+}): { clearTimeoutId: () => void } {
+  const { store, threadId, thread, toolName, messageId, approvalTimeoutMs, signal } = opts;
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  if (approvalTimeoutMs > 0) {
+    timeoutId = setTimeout(() => {
+      const pending = store.getPendingApproval(threadId);
+      if (pending && pending.messageId === messageId) {
+        const display = formatTimeoutDuration(approvalTimeoutMs);
+        log.info({ threadId, tool: toolName, timeoutMs: approvalTimeoutMs }, 'Approval timed out');
+        store.resolvePendingApproval(threadId, {
+          behavior: 'deny',
+          message: `Permission request timed out after ${display}`,
+        });
+        sendTextInThread(thread, `⏰ Approval request timed out after ${display}. Automatically denied.`).catch(() => {});
+      }
+    }, approvalTimeoutMs);
+  }
+
+  if (signal) {
+    signal.addEventListener('abort', () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      const pending = store.getPendingApproval(threadId);
+      if (pending && pending.messageId === messageId) {
+        store.resolvePendingApproval(threadId, {
+          behavior: 'deny',
+          message: 'Task has been stopped',
+        });
+      }
+    }, { once: true });
+  }
+
+  return {
+    clearTimeoutId: () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    },
+  };
+}
+
 /**
  * Creates a canUseTool callback that bridges SDK permission requests to Discord buttons
  *
@@ -75,14 +133,17 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
         }
 
         return new Promise((resolve) => {
-          let timeoutId: ReturnType<typeof setTimeout> | null = null;
+          const { clearTimeoutId } = setupAutoCancel({
+            store, threadId, thread, toolName,
+            messageId: message.id, approvalTimeoutMs, signal: options.signal,
+          });
 
           const approval: PendingApproval = {
             toolName,
             toolInput: input,
             messageId: message.id,
             resolve: (result) => {
-              if (timeoutId) clearTimeout(timeoutId);
+              clearTimeoutId();
               if (result.behavior === 'allow') {
                 resolve({
                   behavior: 'allow',
@@ -99,34 +160,6 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
             askState,
           };
           store.setPendingApproval(threadId, approval);
-
-          // Approval timeout — auto-deny if user doesn't respond in time
-          if (approvalTimeoutMs > 0) {
-            timeoutId = setTimeout(() => {
-              const pending = store.getPendingApproval(threadId);
-              if (pending && pending.messageId === message.id) {
-                log.info({ threadId, tool: toolName, timeoutMs: approvalTimeoutMs }, 'Approval timed out');
-                store.resolvePendingApproval(threadId, {
-                  behavior: 'deny',
-                  message: `Permission request timed out after ${Math.round(approvalTimeoutMs / 60000)} minutes`,
-                });
-                sendTextInThread(thread, `⏰ Approval request timed out after ${Math.round(approvalTimeoutMs / 60000)} minutes. Automatically denied.`).catch(() => {});
-              }
-            }, approvalTimeoutMs);
-          }
-
-          if (options.signal) {
-            options.signal.addEventListener('abort', () => {
-              if (timeoutId) clearTimeout(timeoutId);
-              const pending = store.getPendingApproval(threadId);
-              if (pending && pending.messageId === message.id) {
-                store.resolvePendingApproval(threadId, {
-                  behavior: 'deny',
-                  message: 'Task has been stopped',
-                });
-              }
-            }, { once: true });
-          }
         });
       }
     }
@@ -145,14 +178,17 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
 
     // Create Promise, store resolve in StateStore
     return new Promise((resolve) => {
-      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      const { clearTimeoutId } = setupAutoCancel({
+        store, threadId, thread, toolName,
+        messageId: message.id, approvalTimeoutMs, signal: options.signal,
+      });
 
       const approval: PendingApproval = {
         toolName,
         toolInput: input,
         messageId: message.id,
         resolve: (result) => {
-          if (timeoutId) clearTimeout(timeoutId);
+          clearTimeoutId();
           if (result.behavior === 'allow') {
             log.info({ threadId, tool: toolName }, 'User approved');
             resolve({
@@ -171,39 +207,6 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
       };
 
       store.setPendingApproval(threadId, approval);
-
-      // Approval timeout — auto-deny if user doesn't respond in time
-      if (approvalTimeoutMs > 0) {
-        timeoutId = setTimeout(() => {
-          const pending = store.getPendingApproval(threadId);
-          if (pending && pending.messageId === message.id) {
-            log.info({ threadId, tool: toolName, timeoutMs: approvalTimeoutMs }, 'Approval timed out');
-            store.resolvePendingApproval(threadId, {
-              behavior: 'deny',
-              message: `Permission request timed out after ${Math.round(approvalTimeoutMs / 60000)} minutes`,
-            });
-            sendTextInThread(thread, `⏰ Approval request timed out after ${Math.round(approvalTimeoutMs / 60000)} minutes. Automatically denied.`).catch(() => {});
-          }
-        }, approvalTimeoutMs);
-      }
-
-      // If AbortSignal fires, auto-deny
-      if (options.signal) {
-        options.signal.addEventListener(
-          'abort',
-          () => {
-            if (timeoutId) clearTimeout(timeoutId);
-            const pending = store.getPendingApproval(threadId);
-            if (pending && pending.messageId === message.id) {
-              store.resolvePendingApproval(threadId, {
-                behavior: 'deny',
-                message: 'Task has been stopped',
-              });
-            }
-          },
-          { once: true },
-        );
-      }
     });
   };
 }
