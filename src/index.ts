@@ -247,22 +247,26 @@ async function main() {
       const idleMs = now - session.lastActivityAt.getTime();
       if (idleMs < config.sessionIdleTimeoutMs) continue;
 
+      // Re-check live status before any Discord I/O — a follow-up may have arrived
+      const freshSession = store.getSession(threadId);
+      if (!freshSession || freshSession.status !== 'waiting_input') continue;
+
       try {
         const channel = await client.channels.fetch(threadId);
         if (channel?.isThread()) {
           const thread = channel as ThreadChannel;
           await sendInThread(thread, buildIdleCleanupEmbed(idleMs));
-          if (session.userId) {
-            await sendTextInThread(thread, `<@${session.userId}> Session auto-archived due to inactivity.`);
+          if (freshSession.userId) {
+            await sendTextInThread(thread, `<@${freshSession.userId}> Session auto-archived due to inactivity.`);
           }
           await thread.setArchived(true);
         }
       } catch {
         // Thread may have been deleted
       }
-      // Re-check status: a follow-up message may have transitioned the session to 'running'
-      const currentSession = store.getSession(threadId);
-      if (currentSession && currentSession.status === 'waiting_input') {
+      // Final re-check before clearing (belt-and-suspenders)
+      const finalSession = store.getSession(threadId);
+      if (finalSession && finalSession.status === 'waiting_input') {
         store.clearSession(threadId);
         log.info({ threadId, idleMs }, 'Auto-archived idle session');
       }
