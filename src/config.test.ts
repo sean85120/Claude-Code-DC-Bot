@@ -67,6 +67,34 @@ describe('parseConfig', () => {
     expect(config.rateLimitMaxRequests).toBe(5);
     expect(config.approvalTimeoutMs).toBe(300_000);
     expect(config.sessionIdleTimeoutMs).toBe(1_800_000);
+    expect(config.summaryEnabled).toBe(true);
+    expect(config.summaryChannelName).toBe('claude-daily-summary');
+    expect(config.summaryHourUtc).toBe(0);
+  });
+
+  it('parses custom summary settings', () => {
+    const config = parseConfig({
+      ...minimal,
+      SUMMARY_ENABLED: 'true',
+      SUMMARY_CHANNEL_NAME: 'my-summaries',
+      SUMMARY_HOUR_UTC: '18',
+    });
+    expect(config.summaryEnabled).toBe(true);
+    expect(config.summaryChannelName).toBe('my-summaries');
+    expect(config.summaryHourUtc).toBe(18);
+  });
+
+  it('SUMMARY_ENABLED=false disables summary', () => {
+    const config = parseConfig({ ...minimal, SUMMARY_ENABLED: 'false' });
+    expect(config.summaryEnabled).toBe(false);
+  });
+
+  it('SUMMARY_HOUR_UTC is clamped to 0-23', () => {
+    const configHigh = parseConfig({ ...minimal, SUMMARY_HOUR_UTC: '30' });
+    expect(configHigh.summaryHourUtc).toBe(23);
+
+    const configLow = parseConfig({ ...minimal, SUMMARY_HOUR_UTC: '-5' });
+    expect(configLow.summaryHourUtc).toBe(0);
   });
 
   it('custom numeric settings', () => {

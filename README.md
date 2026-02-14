@@ -30,6 +30,7 @@ Claude Code is powerful but terminal-bound. This bot breaks that limit — you c
 - ⚙️ **Live configuration** — `/settings` and `/repos` let you tweak bot config and manage projects without restarting
 - 📊 **Token tracking** — Cumulative token usage and cost via `/status`
 - 🚦 **Rate limiting** — Configurable per-user request throttling
+- 📅 **Daily summaries** — Automatic daily reports of completed work, token usage, and costs per repository, posted to a dedicated channel
 
 ---
 
@@ -156,6 +157,9 @@ npm run dev               # 🟢 Start the bot
 | `DEFAULT_CWD` | Default working directory; must be in `projects.json` | First project |
 | `RATE_LIMIT_WINDOW_MS` | Rate limit time window (ms) | `60000` |
 | `RATE_LIMIT_MAX_REQUESTS` | Max `/prompt` requests per user per window | `5` |
+| `SUMMARY_ENABLED` | Enable daily summary posting | `true` |
+| `SUMMARY_CHANNEL_NAME` | Channel name for daily summaries (auto-created) | `claude-daily-summary` |
+| `SUMMARY_HOUR_UTC` | Hour (UTC, 0-23) to post daily summary | `0` |
 
 > 💡 **Tip:** All of these can be changed at runtime via `/settings update` without restarting the bot.
 
@@ -169,14 +173,34 @@ npm run dev               # 🟢 Start the bot
 
 ---
 
+## 📅 Daily Summary
+
+The bot automatically posts a daily summary to a dedicated Discord channel (`#claude-daily-summary` by default). At the configured UTC hour, the bot posts **yesterday's** summary with a complete picture of the previous day's work:
+
+- **Overall stats** — Total sessions, tokens, cost, and duration
+- **Token breakdown** — Input, output, and cache token counts
+- **Per-repository breakdown** — Completed tasks grouped by project with prompt descriptions and cost
+
+The summary channel is auto-created in the same category as the general channel. Summary data is persisted to `daily-summary.json` so it survives bot restarts, and old data is automatically pruned after 30 days.
+
+### Configuration
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SUMMARY_ENABLED` | `true` | Set to `false` to disable |
+| `SUMMARY_CHANNEL_NAME` | `claude-daily-summary` | Channel name (auto-created) |
+| `SUMMARY_HOUR_UTC` | `0` | Hour in UTC to post (0 = midnight) |
+
+---
+
 ## 🏗️ Architecture
 
 ```
 src/
 ├── commands/    # 📋 Slash command definitions (prompt, stop, status, history, retry, settings, repos)
-├── handlers/    # 🔀 Orchestration (interaction routing, streaming, permissions, follow-ups)
-├── modules/     # 🧩 Pure functions (embeds, formatting, permissions, tool display)
-├── effects/     # ⚡ Side effects (Discord I/O, Claude SDK bridge, state stores, logger)
+├── handlers/    # 🔀 Orchestration (interaction routing, streaming, permissions, follow-ups, summary scheduler)
+├── modules/     # 🧩 Pure functions (embeds, formatting, permissions, tool display, daily summary)
+├── effects/     # ⚡ Side effects (Discord I/O, Claude SDK bridge, state/usage/daily-summary stores, logger)
 ├── config.ts    # ⚙️ Environment variable parsing and validation
 ├── types.ts     # 📝 Shared type definitions and constants
 └── index.ts     # 🚪 Entry point
@@ -263,7 +287,7 @@ Contributions are welcome! Whether it's a bug fix, a new feature, or improved do
 
 - 🏠 Runs locally — the host machine must stay on with the terminal open
 - 📺 Single-channel operation with user whitelist
-- 💾 In-memory session state (lost on restart)
+- 💾 In-memory session state (lost on restart; daily summary data is persisted to file)
 - 🔑 Requires Claude Code CLI to be authenticated
 
 ---

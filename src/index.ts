@@ -1,10 +1,11 @@
 import { config as loadEnv } from 'dotenv';
 import { ChannelType, type ThreadChannel, type TextChannel } from 'discord.js';
 import { parseConfig, validateConfig } from './config.js';
-import type { SessionState } from './types.js';
+import type { SessionState, CompletedSessionRecord } from './types.js';
 import { logger, printBanner } from './effects/logger.js';
 import { truncate, formatDuration } from './modules/formatters.js';
 import { normalizeChannelName } from './effects/channel-manager.js';
+import { emptyTokenUsage } from './modules/token-usage.js';
 
 const log = logger.child({ module: 'Bot' });
 const claudeLog = logger.child({ module: 'Claude' });
@@ -20,6 +21,8 @@ import { sendInThread, sendTextInThread } from './effects/discord-sender.js';
 import { createThreadMessageHandler } from './handlers/thread-message-handler.js';
 import { UsageStore } from './effects/usage-store.js';
 import { checkClaudeStatus } from './effects/startup-check.js';
+import { DailySummaryStore } from './effects/daily-summary-store.js';
+import { startSummaryScheduler } from './handlers/summary-scheduler.js';
 
 // Load .env
 loadEnv();
@@ -38,6 +41,7 @@ async function main() {
   const store = new StateStore();
   const rateLimitStore = new RateLimitStore();
   const usageStore = new UsageStore();
+  const summaryStore = new DailySummaryStore();
 
   // Claude query launch function
   async function startClaudeQuery(session: SessionState, threadId: string): Promise<void> {
@@ -105,6 +109,31 @@ async function main() {
         const s = store.getSession(threadId);
         const elapsed = s ? Date.now() - s.startedAt.getTime() : 0;
         claudeLog.info({ threadId, prompt: truncate(s?.promptText ?? '', 40), duration: formatDuration(elapsed) }, 'Query completed');
+
+        // Record completed session in daily summary store
+        if (s) {
+          const sessionUsage = usageStore.getSessionUsage(threadId);
+          const projectInfo = config.projects.find((p) => p.path === s.cwd) ?? {
+            name: 'Unknown',
+            path: s.cwd,
+          };
+          const completedRecord: CompletedSessionRecord = {
+            threadId,
+            userId: s.userId,
+            projectName: projectInfo.name,
+            projectPath: projectInfo.path,
+            promptText: s.promptText,
+            startedAt: s.startedAt.toISOString(),
+            completedAt: new Date().toISOString(),
+            durationMs: elapsed,
+            toolCount: s.toolCount,
+            usage: sessionUsage?.usage ?? emptyTokenUsage(),
+            costUsd: sessionUsage?.costUsd ?? 0,
+            model: s.model,
+          };
+          summaryStore.recordCompletedSession(completedRecord);
+        }
+
         store.updateSession(threadId, { status: 'waiting_input' });
 
         try {
@@ -273,6 +302,9 @@ async function main() {
     }
   }, CLEANUP_INTERVAL_MS);
 
+  // Start daily summary scheduler
+  const summaryScheduler = startSummaryScheduler(client, config, summaryStore);
+
   const permName = ({ default: 'Default', plan: 'Plan', acceptEdits: 'Accept Edits', bypassPermissions: 'Bypass Permissions' } as Record<string, string>)[config.defaultPermissionMode] ?? config.defaultPermissionMode;
   const botTag = client.user?.tag ?? 'Unknown';
 
@@ -301,6 +333,7 @@ async function main() {
   bannerLines.push(`  ${dim('Permission Mode')}  ${permName}`);
   if (config.defaultCwd) bannerLines.push(`  ${dim('Working Dir')}  ${config.defaultCwd}`);
   bannerLines.push(`  ${dim('Projects')}  ${config.projects.length} (${config.projects.map((p) => p.name).join(', ')})`);
+  bannerLines.push(`  ${dim('Daily Summary')}  ${config.summaryEnabled ? `Enabled (${config.summaryHourUtc}:00 UTC → #${config.summaryChannelName})` : 'Disabled'}`);
   bannerLines.push('');
   bannerLines.push(`  ${cyan('Ready, awaiting commands.')}`);
   bannerLines.push('');
@@ -311,6 +344,7 @@ async function main() {
     log.info('Shutdown signal received, shutting down...');
 
     clearInterval(cleanupIntervalId);
+    summaryScheduler.cancel();
 
     // Abort all active sessions
     const activeSessions = store.getAllActiveSessions();
