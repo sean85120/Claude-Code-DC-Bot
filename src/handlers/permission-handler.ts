@@ -20,9 +20,9 @@ export interface PermissionHandlerDeps {
 
 /** Format a timeout duration for human-readable display */
 function formatTimeoutDuration(ms: number): string {
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds} seconds`;
-  const minutes = Math.round(ms / 60000);
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 120) return `${totalSeconds} seconds`;
+  const minutes = Math.floor(ms / 60000);
   return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
 }
 
@@ -35,7 +35,6 @@ function setupAutoCancel(opts: {
   messageId: string;
   approvalTimeoutMs: number;
   signal?: AbortSignal;
-  onTimeout?: () => void;
 }): { clearTimeoutId: () => void } {
   const { store, threadId, thread, toolName, messageId, approvalTimeoutMs, signal } = opts;
 

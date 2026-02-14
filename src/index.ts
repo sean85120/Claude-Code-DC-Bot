@@ -260,8 +260,12 @@ async function main() {
       } catch {
         // Thread may have been deleted
       }
-      store.clearSession(threadId);
-      log.info({ threadId, idleMs }, 'Auto-archived idle session');
+      // Re-check status: a follow-up message may have transitioned the session to 'running'
+      const currentSession = store.getSession(threadId);
+      if (currentSession && currentSession.status === 'waiting_input') {
+        store.clearSession(threadId);
+        log.info({ threadId, idleMs }, 'Auto-archived idle session');
+      }
     }
   }, CLEANUP_INTERVAL_MS);
 

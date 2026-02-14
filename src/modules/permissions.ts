@@ -11,10 +11,11 @@ export function isUserAuthorized(userId: string, allowedIds: string[]): boolean 
 }
 
 /**
- * Comprehensive check for user permissions
- * @param userId - User ID
- * @param config - Bot configuration
- * @returns Check result (including whether allowed and denial reason)
+ * Check if a user is permitted to execute bot commands.
+ *
+ * Channel-level restrictions are intentionally omitted: with per-repo channel routing,
+ * slash commands are guild-wide and output is automatically routed to the correct
+ * project channel. Access control relies on the ALLOWED_USER_IDS whitelist.
  */
 export function canExecuteCommand(
   userId: string,
