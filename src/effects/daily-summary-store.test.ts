@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DailySummaryStore } from './daily-summary-store.js';
-import { existsSync, unlinkSync, mkdtempSync } from 'node:fs';
+import { existsSync, unlinkSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { CompletedSessionRecord } from '../types.js';
@@ -162,10 +162,8 @@ describe('DailySummaryStore', () => {
       };
 
       // Write the record file directly
-      const fs = require('node:fs');
-      const path = require('node:path');
-      const filePath = path.resolve(tempDir, 'daily-summary.json');
-      fs.writeFileSync(filePath, JSON.stringify([yesterdayRecord], null, 2), 'utf-8');
+      const filePath = resolve(tempDir, 'daily-summary.json');
+      writeFileSync(filePath, JSON.stringify([yesterdayRecord], null, 2), 'utf-8');
 
       // Create a new store that reads from the file
       const store2 = new DailySummaryStore(tempDir);

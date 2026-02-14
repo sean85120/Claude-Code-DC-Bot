@@ -33,7 +33,12 @@ export function parseConfig(env: Record<string, string | undefined>): BotConfig 
     botRepoPath: env.BOT_REPO_PATH || process.cwd(),
     approvalTimeoutMs: safeParseInt(env.APPROVAL_TIMEOUT_MS, 5 * 60 * 1000),
     sessionIdleTimeoutMs: safeParseInt(env.SESSION_IDLE_TIMEOUT_MS, 30 * 60 * 1000),
-    summaryChannelName: env.SUMMARY_CHANNEL_NAME ?? 'claude-daily-summary',
+    summaryChannelName: (env.SUMMARY_CHANNEL_NAME ?? 'claude-daily-summary')
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 100) || 'claude-daily-summary',
     summaryHourUtc: Math.min(23, Math.max(0, safeParseInt(env.SUMMARY_HOUR_UTC, 0))),
     summaryEnabled: env.SUMMARY_ENABLED !== 'false',
   };

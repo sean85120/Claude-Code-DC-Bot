@@ -111,7 +111,7 @@ export function buildDailySummaryEmbed(
   if (repoSummaries.length > 5) {
     fields.push({
       name: '📦 Other Projects',
-      value: `${repoSummaries.length - 5} more project(s) with completed sessions`,
+      value: `${repoSummaries.length - 5} more ${repoSummaries.length - 5 === 1 ? 'project' : 'projects'} with completed sessions`,
       inline: false,
     });
   }
@@ -120,7 +120,7 @@ export function buildDailySummaryEmbed(
     color: COLORS.Info,
     author: { name: '📅 Daily Summary' },
     title: `Summary for ${record.date}`,
-    description: `Completed **${record.sessions.length}** Claude Code session(s) today across **${repoSummaries.length}** repository/repositories.`,
+    description: `Completed **${record.sessions.length}** session${record.sessions.length === 1 ? '' : 's'} across **${repoSummaries.length}** ${repoSummaries.length === 1 ? 'repository' : 'repositories'}.`,
     fields,
     timestamp: new Date().toISOString(),
   };
