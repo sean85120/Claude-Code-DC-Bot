@@ -29,8 +29,7 @@ export async function execute(
   store: StateStore,
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>,
 ): Promise<void> {
-  const parentId = interaction.channel && 'parentId' in interaction.channel ? interaction.channel.parentId : null;
-  const auth = canExecuteCommand(interaction.user.id, interaction.channelId, config, parentId);
+  const auth = canExecuteCommand(interaction.user.id, config);
   if (!auth.allowed) {
     await interaction.reply({ content: `❌ ${auth.reason}`, flags: [MessageFlags.Ephemeral] });
     return;

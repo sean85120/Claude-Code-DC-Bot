@@ -65,6 +65,8 @@ describe('parseConfig', () => {
     expect(config.streamUpdateIntervalMs).toBe(2000);
     expect(config.rateLimitWindowMs).toBe(60_000);
     expect(config.rateLimitMaxRequests).toBe(5);
+    expect(config.approvalTimeoutMs).toBe(300_000);
+    expect(config.sessionIdleTimeoutMs).toBe(1_800_000);
   });
 
   it('custom numeric settings', () => {

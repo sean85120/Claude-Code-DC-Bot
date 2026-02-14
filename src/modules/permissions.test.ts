@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isUserAuthorized, isChannelAuthorized, canExecuteCommand, isAllowedCwd } from './permissions.js';
+import { isUserAuthorized, canExecuteCommand, isAllowedCwd } from './permissions.js';
 import type { BotConfig, Project } from '../types.js';
 
 describe('isUserAuthorized', () => {
@@ -16,46 +16,20 @@ describe('isUserAuthorized', () => {
   });
 });
 
-describe('isChannelAuthorized', () => {
-  it('returns true when channel ID matches', () => {
-    expect(isChannelAuthorized('ch1', 'ch1')).toBe(true);
-  });
-
-  it('returns true when parent channel ID matches (Thread)', () => {
-    expect(isChannelAuthorized('thread1', 'ch1', 'ch1')).toBe(true);
-  });
-
-  it('returns false when neither matches', () => {
-    expect(isChannelAuthorized('ch2', 'ch1', 'ch3')).toBe(false);
-  });
-});
-
 describe('canExecuteCommand', () => {
   const config = {
     allowedUserIds: ['user1'],
-    discordChannelId: 'ch1',
   } as BotConfig;
 
-  it('allows when both user and channel match', () => {
-    const result = canExecuteCommand('user1', 'ch1', config);
+  it('allows authorized user', () => {
+    const result = canExecuteCommand('user1', config);
     expect(result.allowed).toBe(true);
   });
 
   it('denies when user does not match', () => {
-    const result = canExecuteCommand('user2', 'ch1', config);
+    const result = canExecuteCommand('user2', config);
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('permission');
-  });
-
-  it('denies when channel does not match', () => {
-    const result = canExecuteCommand('user1', 'ch2', config);
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('channel');
-  });
-
-  it('allows when thread parent channel matches', () => {
-    const result = canExecuteCommand('user1', 'thread1', config, 'ch1');
-    expect(result.allowed).toBe(true);
   });
 });
 

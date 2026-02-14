@@ -14,6 +14,65 @@ export interface PermissionHandlerDeps {
   threadId: string;
   thread: ThreadChannel;
   cwd: string;
+  /** Timeout in ms for approval requests — auto-deny after this period (0 = no timeout) */
+  approvalTimeoutMs: number;
+}
+
+/** Format a timeout duration for human-readable display */
+function formatTimeoutDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 120) return `${totalSeconds} seconds`;
+  const minutes = Math.floor(ms / 60000);
+  return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+}
+
+/** Wire up timeout and abort-signal auto-deny for a pending approval */
+function setupAutoCancel(opts: {
+  store: StateStore;
+  threadId: string;
+  thread: ThreadChannel;
+  toolName: string;
+  messageId: string;
+  approvalTimeoutMs: number;
+  signal?: AbortSignal;
+}): { clearTimeoutId: () => void } {
+  const { store, threadId, thread, toolName, messageId, approvalTimeoutMs, signal } = opts;
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  if (approvalTimeoutMs > 0) {
+    timeoutId = setTimeout(() => {
+      const pending = store.getPendingApproval(threadId);
+      if (pending && pending.messageId === messageId) {
+        const display = formatTimeoutDuration(approvalTimeoutMs);
+        log.info({ threadId, tool: toolName, timeoutMs: approvalTimeoutMs }, 'Approval timed out');
+        store.resolvePendingApproval(threadId, {
+          behavior: 'deny',
+          message: `Permission request timed out after ${display}`,
+        });
+        sendTextInThread(thread, `⏰ Approval request timed out after ${display}. Automatically denied.`).catch(() => {});
+      }
+    }, approvalTimeoutMs);
+  }
+
+  if (signal) {
+    signal.addEventListener('abort', () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      const pending = store.getPendingApproval(threadId);
+      if (pending && pending.messageId === messageId) {
+        store.resolvePendingApproval(threadId, {
+          behavior: 'deny',
+          message: 'Task has been stopped',
+        });
+      }
+    }, { once: true });
+  }
+
+  return {
+    clearTimeoutId: () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    },
+  };
 }
 
 /**
@@ -27,7 +86,7 @@ export interface PermissionHandlerDeps {
  */
 export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
   return async (toolName, input, options) => {
-    const { store, threadId, thread, cwd } = deps;
+    const { store, threadId, thread, cwd, approvalTimeoutMs } = deps;
 
     log.info({ threadId, tool: toolName }, 'Awaiting permission approval');
 
@@ -73,11 +132,17 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
         }
 
         return new Promise((resolve) => {
+          const { clearTimeoutId } = setupAutoCancel({
+            store, threadId, thread, toolName,
+            messageId: message.id, approvalTimeoutMs, signal: options.signal,
+          });
+
           const approval: PendingApproval = {
             toolName,
             toolInput: input,
             messageId: message.id,
             resolve: (result) => {
+              clearTimeoutId();
               if (result.behavior === 'allow') {
                 resolve({
                   behavior: 'allow',
@@ -94,18 +159,6 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
             askState,
           };
           store.setPendingApproval(threadId, approval);
-
-          if (options.signal) {
-            options.signal.addEventListener('abort', () => {
-              const pending = store.getPendingApproval(threadId);
-              if (pending && pending.messageId === message.id) {
-                store.resolvePendingApproval(threadId, {
-                  behavior: 'deny',
-                  message: 'Task has been stopped',
-                });
-              }
-            }, { once: true });
-          }
         });
       }
     }
@@ -124,11 +177,17 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
 
     // Create Promise, store resolve in StateStore
     return new Promise((resolve) => {
+      const { clearTimeoutId } = setupAutoCancel({
+        store, threadId, thread, toolName,
+        messageId: message.id, approvalTimeoutMs, signal: options.signal,
+      });
+
       const approval: PendingApproval = {
         toolName,
         toolInput: input,
         messageId: message.id,
         resolve: (result) => {
+          clearTimeoutId();
           if (result.behavior === 'allow') {
             log.info({ threadId, tool: toolName }, 'User approved');
             resolve({
@@ -147,23 +206,6 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
       };
 
       store.setPendingApproval(threadId, approval);
-
-      // If AbortSignal fires, auto-deny
-      if (options.signal) {
-        options.signal.addEventListener(
-          'abort',
-          () => {
-            const pending = store.getPendingApproval(threadId);
-            if (pending && pending.messageId === message.id) {
-              store.resolvePendingApproval(threadId, {
-                behavior: 'deny',
-                message: 'Task has been stopped',
-              });
-            }
-          },
-          { once: true },
-        );
-      }
     });
   };
 }

@@ -34,6 +34,12 @@ export interface BotConfig {
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
   projects: Project[];
+  /** Path of the bot's own repo — sessions for this path use the general channel */
+  botRepoPath: string;
+  /** Timeout in ms for tool approval requests — auto-deny after this period (default: 5 min) */
+  approvalTimeoutMs: number;
+  /** Timeout in ms for idle waiting_input sessions — auto-archive after this period (default: 30 min) */
+  sessionIdleTimeoutMs: number;
 }
 
 // ─── Session ────────────────────────────────────────
