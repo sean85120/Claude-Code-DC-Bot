@@ -17,6 +17,10 @@ vi.mock('../modules/embeds.js', () => ({
   buildErrorEmbed: vi.fn().mockReturnValue({ title: 'error' }),
 }));
 
+vi.mock('../effects/channel-manager.js', () => ({
+  resolveProjectChannel: vi.fn(),
+}));
+
 import { deferReply, editReply } from '../effects/discord-sender.js';
 
 const mockConfig: BotConfig = {
@@ -33,12 +37,15 @@ const mockConfig: BotConfig = {
   rateLimitWindowMs: 60000,
   rateLimitMaxRequests: 5,
   projects: [{ name: 'test', path: '/test' }],
+  botRepoPath: '/test',
+  approvalTimeoutMs: 300000,
+  sessionIdleTimeoutMs: 1800000,
 };
 
 function makeInteraction(overrides?: Record<string, unknown>) {
   return {
     user: { id: 'user-1' },
-    channelId: 'channel-1',
+    channelId: 'any-channel',
     channel: {
       type: ChannelType.GuildText,
       parentId: null,
@@ -115,7 +122,7 @@ describe('prompt execute', () => {
     expect(startQuery).not.toHaveBeenCalled();
   });
 
-  it('creates Thread and starts query in normal flow', async () => {
+  it('creates Thread and starts query in normal flow (no client, fallback)', async () => {
     const interaction = makeInteraction();
     const store = new StateStore();
     const startQuery = vi.fn().mockResolvedValue(undefined);

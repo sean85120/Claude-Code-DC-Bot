@@ -20,8 +20,10 @@ import {
   buildAskQuestionStepEmbed,
   buildAskCompletedEmbed,
   buildOrphanCleanupEmbed,
+  buildIdleCleanupEmbed,
 } from './embeds.js';
 import { COLORS } from '../types.js';
+import type { UserUsageRecord } from '../effects/usage-store.js';
 import type { SessionState, TokenUsage, AskState } from '../types.js';
 import type { GlobalUsageStats } from '../effects/usage-store.js';
 
@@ -547,5 +549,64 @@ describe('buildFooterText via buildToolUseEmbed', () => {
   it('shows English text for plan permission mode', () => {
     const embed = buildToolUseEmbed('Bash', { command: 'ls' }, '/test', { permissionMode: 'plan' });
     expect(embed.footer?.text).toContain('Plan Mode');
+  });
+});
+
+// --- buildIdleCleanupEmbed ---
+
+describe('buildIdleCleanupEmbed', () => {
+  it('uses Info color', () => {
+    const embed = buildIdleCleanupEmbed(1800000);
+    expect(embed.color).toBe(COLORS.Info);
+  });
+
+  it('shows duration of inactivity', () => {
+    const embed = buildIdleCleanupEmbed(1800000); // 30 min
+    expect(embed.description).toContain('30m');
+  });
+
+  it('description includes prompt to start new session', () => {
+    const embed = buildIdleCleanupEmbed(60000);
+    expect(embed.description).toContain('/prompt');
+  });
+
+  it('shows session timeout author', () => {
+    const embed = buildIdleCleanupEmbed(60000);
+    expect(embed.author?.name).toContain('Session Timeout');
+  });
+});
+
+// --- buildGlobalStatusEmbed with per-user usage ---
+
+describe('buildGlobalStatusEmbed - per-user usage', () => {
+  function makeGlobalStats(overrides?: Partial<GlobalUsageStats>): GlobalUsageStats {
+    return {
+      bootedAt: new Date(),
+      totalSessions: 0,
+      completedQueries: 0,
+      totalUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, costUsd: 0 },
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      ...overrides,
+    };
+  }
+
+  it('shows per-user breakdown when user usage is provided', () => {
+    const userUsage = new Map<string, UserUsageRecord>([
+      ['user-1', { usage: { input: 1000, output: 500, cacheRead: 0, cacheWrite: 0, total: 1500, costUsd: 0 }, costUsd: 0.05, durationMs: 5000, totalQueries: 3 }],
+    ]);
+    const embed = buildGlobalStatusEmbed(makeGlobalStats(), new Map(), userUsage);
+    expect(embed.fields?.some((f) => f.name.includes('Per-User Usage'))).toBe(true);
+    expect(embed.fields?.some((f) => f.value.includes('user-1'))).toBe(true);
+  });
+
+  it('does not show per-user section when user usage is empty', () => {
+    const embed = buildGlobalStatusEmbed(makeGlobalStats(), new Map(), new Map());
+    expect(embed.fields?.some((f) => f.name.includes('Per-User Usage'))).toBe(false);
+  });
+
+  it('does not show per-user section when user usage is undefined', () => {
+    const embed = buildGlobalStatusEmbed(makeGlobalStats(), new Map());
+    expect(embed.fields?.some((f) => f.name.includes('Per-User Usage'))).toBe(false);
   });
 });

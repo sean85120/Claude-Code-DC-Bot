@@ -36,8 +36,8 @@ describe('canExecuteCommand', () => {
     discordChannelId: 'ch1',
   } as BotConfig;
 
-  it('allows when both user and channel match', () => {
-    const result = canExecuteCommand('user1', 'ch1', config);
+  it('allows authorized user from any channel', () => {
+    const result = canExecuteCommand('user1', 'any-channel', config);
     expect(result.allowed).toBe(true);
   });
 
@@ -47,13 +47,7 @@ describe('canExecuteCommand', () => {
     expect(result.reason).toContain('permission');
   });
 
-  it('denies when channel does not match', () => {
-    const result = canExecuteCommand('user1', 'ch2', config);
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('channel');
-  });
-
-  it('allows when thread parent channel matches', () => {
+  it('allows authorized user from a thread', () => {
     const result = canExecuteCommand('user1', 'thread1', config, 'ch1');
     expect(result.allowed).toBe(true);
   });

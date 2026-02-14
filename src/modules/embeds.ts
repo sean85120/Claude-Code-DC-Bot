@@ -4,7 +4,7 @@ import type {
   SessionState,
   TokenUsage,
 } from '../types.js';
-import type { GlobalUsageStats, SessionUsageRecord } from '../effects/usage-store.js';
+import type { GlobalUsageStats, SessionUsageRecord, UserUsageRecord } from '../effects/usage-store.js';
 import {
   COLORS,
   TOOL_EMOJI,
@@ -489,11 +489,13 @@ export function buildMultiStatusEmbed(
  * Build a global bot status embed (shown when /status is used outside a thread)
  * @param stats - Global usage statistics
  * @param activeSessions - Map of all active sessions (keyed by threadId)
+ * @param userUsage - Optional per-user usage records
  * @returns Global bot status embed
  */
 export function buildGlobalStatusEmbed(
   stats: GlobalUsageStats,
   activeSessions: Map<string, SessionState>,
+  userUsage?: Map<string, UserUsageRecord>,
 ): APIEmbed {
   const uptime = Date.now() - stats.bootedAt.getTime();
 
@@ -520,6 +522,25 @@ export function buildGlobalStatusEmbed(
       name: '💰 Total Cost',
       value: formatCost(stats.totalCostUsd),
       inline: true,
+    });
+  }
+
+  // Per-user usage breakdown
+  if (userUsage && userUsage.size > 0) {
+    const userSummary = Array.from(userUsage.entries())
+      .sort((a, b) => b[1].costUsd - a[1].costUsd)
+      .map(([userId, record]) => {
+        const parts = [`<@${userId}>`];
+        parts.push(`${formatNumber(record.usage.total)} tokens`);
+        if (record.costUsd > 0) parts.push(formatCost(record.costUsd));
+        parts.push(`${record.totalQueries} queries`);
+        return parts.join(' · ');
+      })
+      .join('\n');
+    fields.push({
+      name: `👤 Per-User Usage (${userUsage.size})`,
+      value: truncate(userSummary, 1024),
+      inline: false,
     });
   }
 
@@ -680,6 +701,22 @@ export function buildAskCompletedEmbed(askState: AskState): APIEmbed {
     color: COLORS.WaitingInput,
     author: { name: '✅ All questions answered' },
     description: summary,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ─── Idle Session Cleanup Embed ─────────────────────
+
+/**
+ * Build a notification embed for idle session auto-cleanup
+ * @param idleMs - Duration of inactivity in milliseconds
+ * @returns Idle session cleanup notification embed
+ */
+export function buildIdleCleanupEmbed(idleMs: number): APIEmbed {
+  return {
+    color: COLORS.Info,
+    author: { name: '🕐 Session Timeout' },
+    description: `This session was auto-archived after **${formatDuration(idleMs)}** of inactivity.\nUse \`/prompt\` to start a new session.`,
     timestamp: new Date().toISOString(),
   };
 }

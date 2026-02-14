@@ -47,6 +47,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
             deps.store,
             deps.startClaudeQuery,
             deps.rateLimitStore,
+            deps.client,
           );
           break;
 

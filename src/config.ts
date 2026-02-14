@@ -30,6 +30,9 @@ export function parseConfig(env: Record<string, string | undefined>): BotConfig 
     rateLimitWindowMs: safeParseInt(env.RATE_LIMIT_WINDOW_MS, 60_000),
     rateLimitMaxRequests: safeParseInt(env.RATE_LIMIT_MAX_REQUESTS, 5),
     projects,
+    botRepoPath: env.BOT_REPO_PATH || process.cwd(),
+    approvalTimeoutMs: safeParseInt(env.APPROVAL_TIMEOUT_MS, 5 * 60 * 1000),
+    sessionIdleTimeoutMs: safeParseInt(env.SESSION_IDLE_TIMEOUT_MS, 30 * 60 * 1000),
   };
 }
 

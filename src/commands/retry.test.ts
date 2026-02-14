@@ -30,6 +30,9 @@ const mockConfig: BotConfig = {
   rateLimitWindowMs: 60000,
   rateLimitMaxRequests: 5,
   projects: [],
+  botRepoPath: '/test',
+  approvalTimeoutMs: 300000,
+  sessionIdleTimeoutMs: 1800000,
 };
 
 function makeSession(threadId: string, overrides?: Partial<SessionState>): SessionState {

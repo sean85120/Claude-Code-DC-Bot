@@ -234,8 +234,8 @@ export async function handleSDKMessage(
         });
       }
 
-      // Record global usage
-      deps.usageStore.recordResult(threadId, usage, result.costUsd, result.durationMs);
+      // Record global and per-user usage
+      deps.usageStore.recordResult(threadId, usage, result.costUsd, result.durationMs, session?.userId);
 
       if (result.success) {
         log.info({ threadId, tokens: usage, cost: result.costUsd, durationMs: result.durationMs }, 'Result received');

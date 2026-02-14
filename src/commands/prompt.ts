@@ -4,6 +4,7 @@ import {
   MessageFlags,
   type ChatInputCommandInteraction,
   type TextChannel,
+  type Client,
 } from 'discord.js';
 import type { BotConfig, SessionState, Project } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
@@ -21,6 +22,7 @@ import {
   createThread,
   sendInThread,
 } from '../effects/discord-sender.js';
+import { resolveProjectChannel } from '../effects/channel-manager.js';
 
 /**
  * Dynamically builds the /prompt slash command definition based on the project list
@@ -55,12 +57,13 @@ export function buildPromptCommand(projects: Project[]) {
 }
 
 /**
- * Executes the /prompt command: validates permissions and rate limits, creates a thread, and starts a Claude query
+ * Executes the /prompt command: validates permissions and rate limits, resolves the target channel, creates a thread, and starts a Claude query
  * @param interaction - Discord command interaction object
  * @param config - Bot configuration
  * @param store - Session state store
  * @param startClaudeQuery - Callback function to start a Claude query
  * @param rateLimitStore - Rate limit store (optional)
+ * @param client - Discord client (optional, enables channel-per-repo routing)
  * @returns void
  */
 export async function execute(
@@ -69,6 +72,7 @@ export async function execute(
   store: StateStore,
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>,
   rateLimitStore?: RateLimitStore,
+  client?: Client,
 ): Promise<void> {
   const parentId = interaction.channel && 'parentId' in interaction.channel ? interaction.channel.parentId : null;
   const auth = canExecuteCommand(interaction.user.id, interaction.channelId, config, parentId);
@@ -117,15 +121,43 @@ export async function execute(
     );
   }
 
-  // Create thread
-  const channel = interaction.channel;
-  if (!channel || channel.type !== ChannelType.GuildText) {
-    await editReply(interaction, { content: '❌ This command can only be used in a text channel' });
-    return;
+  // Resolve target channel for this project
+  let targetChannel: TextChannel;
+  let channelCreated = false;
+
+  if (client) {
+    // Channel-per-repo routing: resolve or create the project-specific channel
+    const selectedProject = config.projects.find((p) => p.path === cwd);
+    const isBotRepo = cwd === config.botRepoPath;
+
+    try {
+      const result = await resolveProjectChannel(
+        client,
+        config.discordGuildId,
+        config.discordChannelId,
+        selectedProject?.name ?? 'unknown',
+        isBotRepo,
+      );
+      targetChannel = result.channel;
+      channelCreated = result.created;
+    } catch (error) {
+      await editReply(interaction, {
+        content: `❌ Unable to resolve project channel: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return;
+    }
+  } else {
+    // Fallback: use the channel where the command was invoked (backward compat / tests)
+    const channel = interaction.channel;
+    if (!channel || channel.type !== ChannelType.GuildText) {
+      await editReply(interaction, { content: '❌ This command can only be used in a text channel' });
+      return;
+    }
+    targetChannel = channel as TextChannel;
   }
 
   const threadName = `Session: ${truncate(message, 30)}`;
-  const thread = await createThread(channel as TextChannel, threadName);
+  const thread = await createThread(targetChannel, threadName);
 
   // Create session
   const abortController = new AbortController();
@@ -160,7 +192,9 @@ export async function execute(
   await sendInThread(thread, startEmbed);
 
   await editReply(interaction, {
-    content: `🚀 Task started → <#${thread.id}>`,
+    content: channelCreated
+      ? `🚀 Task started in newly created <#${targetChannel.id}> → <#${thread.id}>`
+      : `🚀 Task started → <#${thread.id}>`,
   });
 
   // Start Claude query (async, do not await)

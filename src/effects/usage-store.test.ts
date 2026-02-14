@@ -78,4 +78,75 @@ describe('UsageStore', () => {
     expect(stats.bootedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
     expect(stats.bootedAt.getTime()).toBeLessThanOrEqual(Date.now());
   });
+
+  describe('Per-user tracking', () => {
+    it('tracks usage per user when userId is provided', () => {
+      const store = new UsageStore();
+      store.recordResult('t1', makeUsage(100, 50), 0.01, 5000, 'user-1');
+      store.recordResult('t2', makeUsage(200, 100), 0.02, 3000, 'user-2');
+
+      const user1 = store.getUserUsage('user-1');
+      expect(user1).toBeDefined();
+      expect(user1!.usage.input).toBe(100);
+      expect(user1!.usage.total).toBe(150);
+      expect(user1!.costUsd).toBeCloseTo(0.01);
+      expect(user1!.totalQueries).toBe(1);
+
+      const user2 = store.getUserUsage('user-2');
+      expect(user2).toBeDefined();
+      expect(user2!.usage.input).toBe(200);
+      expect(user2!.totalQueries).toBe(1);
+    });
+
+    it('accumulates usage for the same user across queries', () => {
+      const store = new UsageStore();
+      store.recordResult('t1', makeUsage(100, 50), 0.01, 5000, 'user-1');
+      store.recordResult('t2', makeUsage(200, 100), 0.02, 3000, 'user-1');
+
+      const user = store.getUserUsage('user-1');
+      expect(user!.usage.input).toBe(300);
+      expect(user!.usage.total).toBe(450);
+      expect(user!.costUsd).toBeCloseTo(0.03);
+      expect(user!.totalQueries).toBe(2);
+    });
+
+    it('does not track per-user when userId is undefined', () => {
+      const store = new UsageStore();
+      store.recordResult('t1', makeUsage(100, 50), 0.01, 5000);
+
+      expect(store.getAllUserUsage().size).toBe(0);
+    });
+
+    it('getUserUsage returns undefined for unknown user', () => {
+      const store = new UsageStore();
+      expect(store.getUserUsage('nonexistent')).toBeUndefined();
+    });
+
+    it('getUserUsage returns a copy', () => {
+      const store = new UsageStore();
+      store.recordResult('t1', makeUsage(100, 50), 0.01, 5000, 'user-1');
+      const user = store.getUserUsage('user-1')!;
+      user.usage.input = 999;
+      expect(store.getUserUsage('user-1')!.usage.input).toBe(100);
+    });
+
+    it('getAllUserUsage returns all users', () => {
+      const store = new UsageStore();
+      store.recordResult('t1', makeUsage(100, 50), 0.01, 5000, 'user-1');
+      store.recordResult('t2', makeUsage(200, 100), 0.02, 3000, 'user-2');
+
+      const allUsage = store.getAllUserUsage();
+      expect(allUsage.size).toBe(2);
+      expect(allUsage.has('user-1')).toBe(true);
+      expect(allUsage.has('user-2')).toBe(true);
+    });
+
+    it('getAllUserUsage returns copies', () => {
+      const store = new UsageStore();
+      store.recordResult('t1', makeUsage(100, 50), 0.01, 5000, 'user-1');
+      const allUsage = store.getAllUserUsage();
+      allUsage.get('user-1')!.usage.input = 999;
+      expect(store.getUserUsage('user-1')!.usage.input).toBe(100);
+    });
+  });
 });

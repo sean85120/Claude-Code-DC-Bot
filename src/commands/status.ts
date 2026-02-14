@@ -47,6 +47,7 @@ export async function execute(
   // Not inside a thread, show global bot status
   const activeSessions = store.getAllActiveSessions();
   const globalStats = usageStore.getGlobalStats();
-  const embed = buildGlobalStatusEmbed(globalStats, activeSessions);
+  const userUsage = usageStore.getAllUserUsage();
+  const embed = buildGlobalStatusEmbed(globalStats, activeSessions, userUsage);
   await editReply(interaction, { embeds: [embed] });
 }

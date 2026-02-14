@@ -1,9 +1,10 @@
 import { config as loadEnv } from 'dotenv';
-import type { ThreadChannel } from 'discord.js';
+import { ChannelType, type ThreadChannel, type TextChannel } from 'discord.js';
 import { parseConfig, validateConfig } from './config.js';
 import type { SessionState } from './types.js';
 import { logger, printBanner } from './effects/logger.js';
 import { truncate, formatDuration } from './modules/formatters.js';
+import { normalizeChannelName } from './effects/channel-manager.js';
 
 const log = logger.child({ module: 'Bot' });
 const claudeLog = logger.child({ module: 'Claude' });
@@ -14,8 +15,8 @@ import { createInteractionHandler } from './handlers/interaction-handler.js';
 import { startQuery } from './effects/claude-bridge.js';
 import { createMessageHandler } from './handlers/stream-handler.js';
 import { createCanUseTool } from './handlers/permission-handler.js';
-import { buildErrorEmbed, buildWaitingInputEmbed, buildOrphanCleanupEmbed } from './modules/embeds.js';
-import { sendInThread } from './effects/discord-sender.js';
+import { buildErrorEmbed, buildWaitingInputEmbed, buildOrphanCleanupEmbed, buildIdleCleanupEmbed } from './modules/embeds.js';
+import { sendInThread, sendTextInThread } from './effects/discord-sender.js';
 import { createThreadMessageHandler } from './handlers/thread-message-handler.js';
 import { UsageStore } from './effects/usage-store.js';
 import { checkClaudeStatus } from './effects/startup-check.js';
@@ -63,6 +64,7 @@ async function main() {
       threadId,
       thread,
       cwd: session.cwd,
+      approvalTimeoutMs: config.approvalTimeoutMs,
     });
 
     // Start Claude query (supports resume + image attachments)
@@ -155,30 +157,57 @@ async function main() {
     await threadMessageHandler(message);
   });
 
-  // Clean up orphan Threads on startup
+  // Clean up orphan Threads on startup (across all repo channels)
   try {
-    const mainChannel = await client.channels.fetch(config.discordChannelId);
-    if (mainChannel && 'threads' in mainChannel) {
-      const activeThreads = await (mainChannel as import('discord.js').TextChannel).threads.fetchActive();
-      const botId = client.user?.id;
-      let cleaned = 0;
+    const botId = client.user?.id;
+    const channelIdsToClean = new Set<string>();
 
-      for (const [, thread] of activeThreads.threads) {
-        // Only clean up Threads created by the Bot that are not in the store
-        if (thread.ownerId === botId && !store.getSession(thread.id)) {
-          try {
-            await sendInThread(thread, buildOrphanCleanupEmbed());
-            await thread.setArchived(true);
-            cleaned++;
-          } catch {
-            // Thread may have been deleted
-          }
+    // Always include the general channel
+    channelIdsToClean.add(config.discordChannelId);
+
+    // Discover repo-specific channels by matching project names
+    try {
+      const guild = await client.guilds.fetch(config.discordGuildId);
+      const allChannels = await guild.channels.fetch();
+      for (const project of config.projects) {
+        const normalized = normalizeChannelName(project.name);
+        if (!normalized) continue;
+        const found = allChannels.find(
+          (ch) => ch !== null && ch.type === ChannelType.GuildText && ch.name === normalized,
+        );
+        if (found) {
+          channelIdsToClean.add(found.id);
         }
       }
+    } catch (error) {
+      log.warn({ err: error }, 'Failed to discover repo channels for cleanup (non-fatal)');
+    }
 
-      if (cleaned > 0) {
-        log.info({ cleaned }, 'Cleaned up orphan Threads');
+    let cleaned = 0;
+    for (const channelId of channelIdsToClean) {
+      try {
+        const channel = await client.channels.fetch(channelId);
+        if (channel && 'threads' in channel) {
+          const activeThreads = await (channel as TextChannel).threads.fetchActive();
+          for (const [, thread] of activeThreads.threads) {
+            if (thread.ownerId === botId && !store.getSession(thread.id)) {
+              try {
+                await sendInThread(thread, buildOrphanCleanupEmbed());
+                await thread.setArchived(true);
+                cleaned++;
+              } catch {
+                // Thread may have been deleted
+              }
+            }
+          }
+        }
+      } catch {
+        // Channel may have been deleted
       }
+    }
+
+    if (cleaned > 0) {
+      log.info({ cleaned }, 'Cleaned up orphan Threads');
     }
   } catch (error) {
     log.warn({ err: error }, 'Failed to clean up orphan Threads (non-fatal)');
@@ -205,6 +234,36 @@ async function main() {
   } catch (err) {
     claudeError = err instanceof Error ? err.message : String(err);
   }
+
+  // Periodic cleanup of idle waiting_input sessions
+  const CLEANUP_INTERVAL_MS = 60_000; // Check every minute
+  setInterval(async () => {
+    const now = Date.now();
+    const activeSessions = store.getAllActiveSessions();
+
+    for (const [threadId, session] of activeSessions) {
+      if (session.status !== 'waiting_input') continue;
+
+      const idleMs = now - session.lastActivityAt.getTime();
+      if (idleMs < config.sessionIdleTimeoutMs) continue;
+
+      try {
+        const channel = await client.channels.fetch(threadId);
+        if (channel?.isThread()) {
+          const thread = channel as ThreadChannel;
+          await sendInThread(thread, buildIdleCleanupEmbed(idleMs));
+          if (session.userId) {
+            await sendTextInThread(thread, `<@${session.userId}> Session auto-archived due to inactivity.`);
+          }
+          await thread.setArchived(true);
+        }
+      } catch {
+        // Thread may have been deleted
+      }
+      store.clearSession(threadId);
+      log.info({ threadId, idleMs }, 'Auto-archived idle session');
+    }
+  }, CLEANUP_INTERVAL_MS);
 
   const permName = ({ default: 'Default', plan: 'Plan', acceptEdits: 'Accept Edits', bypassPermissions: 'Bypass Permissions' } as Record<string, string>)[config.defaultPermissionMode] ?? config.defaultPermissionMode;
   const botTag = client.user?.tag ?? 'Unknown';

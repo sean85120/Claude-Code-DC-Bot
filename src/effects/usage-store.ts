@@ -18,6 +18,14 @@ export interface SessionUsageRecord {
   durationMs: number;
 }
 
+/** Cumulative usage record for a single user */
+export interface UserUsageRecord {
+  usage: TokenUsage;
+  costUsd: number;
+  durationMs: number;
+  totalQueries: number;
+}
+
 /** Global token usage tracking (in-memory, resets on restart) */
 export class UsageStore {
   private bootedAt = new Date();
@@ -27,6 +35,7 @@ export class UsageStore {
   private totalCostUsd = 0;
   private totalDurationMs = 0;
   private sessionUsage = new Map<string, SessionUsageRecord>();
+  private userUsage = new Map<string, UserUsageRecord>();
 
   /** Record a new session start, incrementing the totalSessions count */
   recordSessionStart(): void {
@@ -34,13 +43,14 @@ export class UsageStore {
   }
 
   /**
-   * Record usage from a query result, updating both global and session-level statistics
+   * Record usage from a query result, updating global, session-level, and per-user statistics
    * @param threadId - Discord Thread ID
    * @param usage - Token usage for this query
    * @param costUsd - Cost in USD for this query
    * @param durationMs - Duration in milliseconds for this query
+   * @param userId - Optional Discord user ID for per-user tracking
    */
-  recordResult(threadId: string, usage: TokenUsage, costUsd: number, durationMs: number): void {
+  recordResult(threadId: string, usage: TokenUsage, costUsd: number, durationMs: number, userId?: string): void {
     this.completedQueries++;
     this.totalUsage = mergeTokenUsage(this.totalUsage, usage);
     this.totalCostUsd += costUsd;
@@ -53,6 +63,24 @@ export class UsageStore {
       existing.durationMs += durationMs;
     } else {
       this.sessionUsage.set(threadId, { usage: { ...usage }, costUsd, durationMs });
+    }
+
+    // Per-user tracking
+    if (userId) {
+      const userRecord = this.userUsage.get(userId);
+      if (userRecord) {
+        userRecord.usage = mergeTokenUsage(userRecord.usage, usage);
+        userRecord.costUsd += costUsd;
+        userRecord.durationMs += durationMs;
+        userRecord.totalQueries++;
+      } else {
+        this.userUsage.set(userId, {
+          usage: { ...usage },
+          costUsd,
+          durationMs,
+          totalQueries: 1,
+        });
+      }
     }
   }
 
@@ -80,5 +108,33 @@ export class UsageStore {
     const record = this.sessionUsage.get(threadId);
     if (!record) return undefined;
     return { usage: { ...record.usage }, costUsd: record.costUsd, durationMs: record.durationMs };
+  }
+
+  /**
+   * Get cumulative usage for a specified user
+   * @param userId - Discord user ID
+   * @returns The user usage record, or undefined if not found
+   */
+  getUserUsage(userId: string): UserUsageRecord | undefined {
+    const record = this.userUsage.get(userId);
+    if (!record) return undefined;
+    return { usage: { ...record.usage }, costUsd: record.costUsd, durationMs: record.durationMs, totalQueries: record.totalQueries };
+  }
+
+  /**
+   * Get all per-user usage records
+   * @returns A new Map of userId → UserUsageRecord (copies)
+   */
+  getAllUserUsage(): Map<string, UserUsageRecord> {
+    const result = new Map<string, UserUsageRecord>();
+    for (const [userId, record] of this.userUsage) {
+      result.set(userId, {
+        usage: { ...record.usage },
+        costUsd: record.costUsd,
+        durationMs: record.durationMs,
+        totalQueries: record.totalQueries,
+      });
+    }
+    return result;
   }
 }

@@ -35,18 +35,15 @@ export function isChannelAuthorized(
  */
 export function canExecuteCommand(
   userId: string,
-  channelId: string,
+  _channelId: string,
   config: BotConfig,
-  parentChannelId?: string | null,
+  _parentChannelId?: string | null,
 ): { allowed: boolean; reason?: string } {
   if (!isUserAuthorized(userId, config.allowedUserIds)) {
     return { allowed: false, reason: 'You do not have permission to use this command' };
   }
 
-  if (!isChannelAuthorized(channelId, config.discordChannelId, parentChannelId)) {
-    return { allowed: false, reason: 'This command can only be used in the designated channel' };
-  }
-
+  // Channel restriction removed — sessions are routed to per-repo channels automatically
   return { allowed: true };
 }
 
