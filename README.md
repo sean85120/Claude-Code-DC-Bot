@@ -1,47 +1,48 @@
-# Claude-Code-DC-Bot
+# 🤖 Claude-Code-DC-Bot
 
+[![CI](https://github.com/sean85120/Claude-Code-DC-Bot/actions/workflows/ci.yml/badge.svg)](https://github.com/sean85120/Claude-Code-DC-Bot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org)
 
-> Control [Claude Code](https://docs.anthropic.com/en/docs/claude-code) from anywhere — your phone, tablet, or any device with Discord.
+> 📱 Control [Claude Code](https://docs.anthropic.com/en/docs/claude-code) from anywhere — your phone, tablet, or any device with Discord.
 
 Send prompts, approve tool calls, and watch Claude work in real time, all without sitting at your computer. Built on the official [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk).
 
-> **Note:** Tested with Claude Code on the Max plan. API Key authentication should work but is untested and will consume API credits.
+> ⚠️ **Note:** Tested with Claude Code on the Max plan. API Key authentication should work but is untested and will consume API credits.
 
 ---
 
-## Why?
+## 💡 Why?
 
 Claude Code is powerful but terminal-bound. This bot breaks that limit — you can kick off a refactor from your couch, approve a file write from your phone, and check progress from anywhere Discord runs. Each prompt gets its own thread, so you can run multiple tasks at once and never lose context.
 
 ---
 
-## Features
+## ✨ Features
 
-- **Real-time streaming** — Responses update live with throttled Discord edits
-- **Thread isolation** — Each `/prompt` creates a dedicated thread; run multiple tasks concurrently
-- **Follow-up conversations** — Reply in a thread to continue with full context, including file attachments (images, PDFs, code files)
-- **Tool approval** — Unapproved operations present Approve/Deny buttons in Discord
-- **Interactive Q&A** — `AskUserQuestion` renders as buttons with single-select, multi-select, and free-text input
-- **Session management** — `/stop` to abort, `/retry` to re-run, `/history` to export as Markdown
-- **Live configuration** — `/settings` and `/repos` let you tweak bot config and manage projects without restarting
-- **Token tracking** — Cumulative token usage and cost via `/status`
-- **Rate limiting** — Configurable per-user request throttling
+- 🔴 **Real-time streaming** — Responses update live with throttled Discord edits
+- 🧵 **Thread isolation** — Each `/prompt` creates a dedicated thread; run multiple tasks concurrently
+- 💬 **Follow-up conversations** — Reply in a thread to continue with full context, including file attachments (images, PDFs, code files)
+- ✅ **Tool approval** — Unapproved operations present Approve/Deny buttons in Discord
+- ❓ **Interactive Q&A** — `AskUserQuestion` renders as buttons with single-select, multi-select, and free-text input
+- 🎛️ **Session management** — `/stop` to abort, `/retry` to re-run, `/history` to export as Markdown
+- ⚙️ **Live configuration** — `/settings` and `/repos` let you tweak bot config and manage projects without restarting
+- 📊 **Token tracking** — Cumulative token usage and cost via `/status`
+- 🚦 **Rate limiting** — Configurable per-user request throttling
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Node.js** 18+
-- **npm** 9+
-- **Claude Code CLI** installed and logged in (`claude login`)
-- **Discord Bot Token** from the [Discord Developer Portal](https://discord.com/developers/applications)
+- 📦 **Node.js** 18+
+- 📦 **npm** 9+
+- 🖥️ **Claude Code CLI** installed and logged in (`claude login`)
+- 🔑 **Discord Bot Token** from the [Discord Developer Portal](https://discord.com/developers/applications)
 
-### 1. Clone and install
+### 1️⃣ Clone and install
 
 ```bash
 git clone https://github.com/sean85120/Claude-Code-DC-Bot.git
@@ -49,14 +50,14 @@ cd Claude-Code-DC-Bot
 npm install
 ```
 
-### 2. Create a Discord Bot
+### 2️⃣ Create a Discord Bot
 
 1. Go to [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**
 2. Navigate to **Bot** > **Reset Token** > copy the token
 3. Note the **Application ID** (this is your Client ID)
 4. Enable **Message Content Intent** under Privileged Gateway Intents
 
-### 3. Invite the Bot
+### 3️⃣ Invite the Bot
 
 Replace `CLIENT_ID` in the URL below and open it in your browser:
 
@@ -66,7 +67,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot%20application
 
 Required permissions: Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Read Message History, Use Slash Commands.
 
-### 4. Configure environment
+### 4️⃣ Configure environment
 
 Run the interactive setup script:
 
@@ -84,11 +85,11 @@ cp projects.example.json projects.json
 Fill in `.env`:
 
 ```env
-DISCORD_BOT_TOKEN=           # Bot token
-DISCORD_CLIENT_ID=           # Application Client ID
-DISCORD_GUILD_ID=            # Server ID
-DISCORD_CHANNEL_ID=          # Channel the bot operates in
-ALLOWED_USER_IDS=            # Comma-separated user IDs
+DISCORD_BOT_TOKEN=           # 🔑 Bot token
+DISCORD_CLIENT_ID=           # 🆔 Application Client ID
+DISCORD_GUILD_ID=            # 🏠 Server ID
+DISCORD_CHANNEL_ID=          # 📺 Channel the bot operates in
+ALLOWED_USER_IDS=            # 👤 Comma-separated user IDs
 ```
 
 Define your project directories in `projects.json`:
@@ -100,51 +101,51 @@ Define your project directories in `projects.json`:
 ]
 ```
 
-### 5. Deploy and run
+### 5️⃣ Deploy and run
 
 ```bash
-npm run deploy-commands   # Register slash commands (first time or after changes)
-npm run dev               # Start the bot
+npm run deploy-commands   # 📡 Register slash commands (first time or after changes)
+npm run dev               # 🟢 Start the bot
 ```
 
 ---
 
-## Usage
+## 🎮 Usage
 
 ### Commands
 
 | Command | Description |
 | --- | --- |
-| `/prompt` | Send a prompt to Claude Code (creates a new thread) |
-| `/stop` | Preview progress summary, then confirm to abort and archive |
-| `/retry` | Re-execute the same prompt in a fresh session |
-| `/history` | Export session transcript as a Markdown file |
-| `/status` | View session or global token usage and cost |
-| `/settings view` | Show current bot settings |
-| `/settings update` | Change a setting live (model, cwd, permission mode, rate limits) |
-| `/repos list` | List registered project directories |
-| `/repos add` | Add a project (updates `/prompt` dropdown immediately) |
-| `/repos remove` | Remove a project |
+| `/prompt` | 💬 Send a prompt to Claude Code (creates a new thread) |
+| `/stop` | 🛑 Preview progress summary, then confirm to abort and archive |
+| `/retry` | 🔄 Re-execute the same prompt in a fresh session |
+| `/history` | 📜 Export session transcript as a Markdown file |
+| `/status` | 📊 View session or global token usage and cost |
+| `/settings view` | 👁️ Show current bot settings |
+| `/settings update` | ⚙️ Change a setting live (model, cwd, permission mode, rate limits) |
+| `/repos list` | 📂 List registered project directories |
+| `/repos add` | ➕ Add a project (updates `/prompt` dropdown immediately) |
+| `/repos remove` | ➖ Remove a project |
 
 ### `/prompt` parameters
 
 | Parameter | Description | Required |
 | --- | --- | --- |
-| `message` | The prompt to send to Claude | Yes |
-| `cwd` | Working directory (dropdown from `projects.json`) | Yes |
-| `model` | Model override (Opus 4.6 / Sonnet 4.5 / Haiku 4.5) | No |
+| `message` | The prompt to send to Claude | ✅ Yes |
+| `cwd` | Working directory (dropdown from `projects.json`) | ✅ Yes |
+| `model` | Model override (Opus 4.6 / Sonnet 4.5 / Haiku 4.5) | ❌ No |
 
-### Typical workflow
+### 🔄 Typical workflow
 
 1. Run `/prompt` in the configured channel — a new thread is created
 2. Claude streams its response into the thread in real time
-3. When Claude needs an unapproved tool, **Approve / Deny** buttons appear
+3. When Claude needs an unapproved tool, **✅ Approve / ❌ Deny** buttons appear
 4. After completion, reply in the thread to continue the conversation (supports file attachments)
 5. Use `/stop` to end the session or `/retry` to start over
 
 ---
 
-## Configuration Reference
+## ⚙️ Configuration Reference
 
 ### Optional environment variables
 
@@ -156,62 +157,62 @@ npm run dev               # Start the bot
 | `RATE_LIMIT_WINDOW_MS` | Rate limit time window (ms) | `60000` |
 | `RATE_LIMIT_MAX_REQUESTS` | Max `/prompt` requests per user per window | `5` |
 
-> Tip: All of these can be changed at runtime via `/settings update` without restarting the bot.
+> 💡 **Tip:** All of these can be changed at runtime via `/settings update` without restarting the bot.
 
-### Permission modes
+### 🔐 Permission modes
 
 | Mode | Behavior |
 | --- | --- |
 | `default` | Auto-approves tools in the project's `.claude/settings.local.json` allow list; others require Discord approval |
 | `acceptEdits` | Like `default`, but also auto-approves file edit operations (Write, Edit, etc.) |
-| `bypassPermissions` | Auto-approves everything. **Use with caution.** |
+| `bypassPermissions` | ⚠️ Auto-approves everything. **Use with caution.** |
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
 src/
-├── commands/    # Slash command definitions (prompt, stop, status, history, retry, settings, repos)
-├── handlers/    # Orchestration (interaction routing, streaming, permissions, follow-ups)
-├── modules/     # Pure functions (embeds, formatting, permissions, tool display)
-├── effects/     # Side effects (Discord I/O, Claude SDK bridge, state stores, logger)
-├── config.ts    # Environment variable parsing and validation
-├── types.ts     # Shared type definitions and constants
-└── index.ts     # Entry point
+├── commands/    # 📋 Slash command definitions (prompt, stop, status, history, retry, settings, repos)
+├── handlers/    # 🔀 Orchestration (interaction routing, streaming, permissions, follow-ups)
+├── modules/     # 🧩 Pure functions (embeds, formatting, permissions, tool display)
+├── effects/     # ⚡ Side effects (Discord I/O, Claude SDK bridge, state stores, logger)
+├── config.ts    # ⚙️ Environment variable parsing and validation
+├── types.ts     # 📝 Shared type definitions and constants
+└── index.ts     # 🚪 Entry point
 ```
 
 **Key design decisions:**
 
-- **`modules/`** contains pure functions with no side effects — easy to test in isolation
-- **`effects/`** encapsulates all I/O (Discord API, Claude SDK, file system)
-- **Permission bridge:** `canUseTool` creates a Promise and stores its `resolve` in the `StateStore`. The SDK pauses until a user clicks Approve/Deny in Discord, which resolves the Promise and unblocks execution
-- **Session state** is keyed by Discord thread ID and stored in memory (cleared on restart)
+- 🧩 **`modules/`** contains pure functions with no side effects — easy to test in isolation
+- ⚡ **`effects/`** encapsulates all I/O (Discord API, Claude SDK, file system)
+- 🔗 **Permission bridge:** `canUseTool` creates a Promise and stores its `resolve` in the `StateStore`. The SDK pauses until a user clicks Approve/Deny in Discord, which resolves the Promise and unblocks execution
+- 💾 **Session state** is keyed by Discord thread ID and stored in memory (cleared on restart)
 
 ---
 
-## Security Model
+## 🛡️ Security Model
 
 Three layers of defense:
 
-1. **User authorization** — Only `ALLOWED_USER_IDS` can interact in `DISCORD_CHANNEL_ID`
-2. **Project whitelist** — `cwd` must be listed in `projects.json`, ensuring correct settings are loaded
-3. **Tool approval** — Each project's `.claude/settings.local.json` defines auto-approved tools; everything else requires explicit approval via Discord buttons
+1. 👤 **User authorization** — Only `ALLOWED_USER_IDS` can interact in `DISCORD_CHANNEL_ID`
+2. 📁 **Project whitelist** — `cwd` must be listed in `projects.json`, ensuring correct settings are loaded
+3. ✅ **Tool approval** — Each project's `.claude/settings.local.json` defines auto-approved tools; everything else requires explicit approval via Discord buttons
 
-> **Note:** The `cwd` restriction controls Claude's starting directory and loaded settings, not file system access. Claude can still reach other paths. The actual safeguards are the per-project allow list and the `canUseTool` approval flow.
+> ⚠️ **Note:** The `cwd` restriction controls Claude's starting directory and loaded settings, not file system access. Claude can still reach other paths. The actual safeguards are the per-project allow list and the `canUseTool` approval flow.
 
 ---
 
-## Development
+## 🛠️ Development
 
 ```bash
-npm run dev                # Dev mode with hot reload (tsx)
-npm run build              # Compile TypeScript
-npm start                  # Run compiled output
-npm test                   # Run tests (Vitest)
-npm run test:watch         # Watch mode
-npm run test:coverage      # Coverage report
-npm run deploy-commands    # Register slash commands
+npm run dev                # 🟢 Dev mode with hot reload (tsx)
+npm run build              # 🔨 Compile TypeScript
+npm start                  # ▶️  Run compiled output
+npm test                   # 🧪 Run tests (Vitest)
+npm run test:watch         # 👀 Watch mode
+npm run test:coverage      # 📊 Coverage report
+npm run deploy-commands    # 📡 Register slash commands
 ```
 
 Run a single test file:
@@ -222,49 +223,51 @@ npm test -- src/modules/formatters.test.ts
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Whether it's a bug fix, a new feature, or improved docs — all PRs are appreciated.
 
-### Getting started
+> 🔒 **CI runs automatically** on every pull request — your code must pass type checking and all tests before merging.
 
-1. **Fork** the repository
-2. **Create a branch** for your feature or fix (`git checkout -b feat/my-feature`)
-3. **Make your changes** — follow the existing code style and layer conventions
-4. **Add or update tests** — all modules have co-located `.test.ts` files
-5. **Run the test suite** (`npm test`) — make sure everything passes
-6. **Open a pull request** with a clear description of what you changed and why
+### 🏁 Getting started
 
-### Code conventions
+1. 🍴 **Fork** the repository
+2. 🌿 **Create a branch** for your feature or fix (`git checkout -b feat/my-feature`)
+3. ✏️ **Make your changes** — follow the existing code style and layer conventions
+4. 🧪 **Add or update tests** — all modules have co-located `.test.ts` files
+5. ✅ **Run the test suite** (`npm test`) — make sure everything passes
+6. 🚀 **Open a pull request** with a clear description of what you changed and why
+
+### 📏 Code conventions
 
 | Rule | Details |
 | --- | --- |
-| Pure logic in `modules/` | No I/O, no side effects — keep it testable |
-| I/O in `effects/` | All Discord/SDK/filesystem interactions live here |
-| Co-located tests | `foo.ts` pairs with `foo.test.ts` in the same directory |
-| Centralized types | All shared types go in `types.ts` |
-| ESM imports | Use `.js` extensions in imports (TypeScript ESM requirement) |
+| 🧩 Pure logic in `modules/` | No I/O, no side effects — keep it testable |
+| ⚡ I/O in `effects/` | All Discord/SDK/filesystem interactions live here |
+| 📂 Co-located tests | `foo.ts` pairs with `foo.test.ts` in the same directory |
+| 📝 Centralized types | All shared types go in `types.ts` |
+| 📦 ESM imports | Use `.js` extensions in imports (TypeScript ESM requirement) |
 
-### Ideas for contribution
+### 💭 Ideas for contribution
 
-- Webhook / notification integrations
-- Persistent session storage (database-backed)
-- Web dashboard for session monitoring
-- Multi-server support
-- Docker deployment setup
-- Localization / i18n support
-
----
-
-## Known Limitations
-
-- Runs locally — the host machine must stay on with the terminal open
-- Single-channel operation with user whitelist
-- In-memory session state (lost on restart)
-- Requires Claude Code CLI to be authenticated
+- 🔔 Webhook / notification integrations
+- 💾 Persistent session storage (database-backed)
+- 🖥️ Web dashboard for session monitoring
+- 🌐 Multi-server support
+- 🐳 Docker deployment setup
+- 🌍 Localization / i18n support
 
 ---
 
-## License
+## ⚠️ Known Limitations
+
+- 🏠 Runs locally — the host machine must stay on with the terminal open
+- 📺 Single-channel operation with user whitelist
+- 💾 In-memory session state (lost on restart)
+- 🔑 Requires Claude Code CLI to be authenticated
+
+---
+
+## 📄 License
 
 [MIT](LICENSE)
