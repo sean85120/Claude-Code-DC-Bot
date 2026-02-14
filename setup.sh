@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+print_green()  { printf "${GREEN}%s${NC}\n" "$1"; }
+print_yellow() { printf "${YELLOW}%s${NC}\n" "$1"; }
+print_cyan()   { printf "${CYAN}%s${NC}" "$1"; }
+print_red()    { printf "${RED}%s${NC}\n" "$1"; }
+
+# Prompt for a required value (re-prompts if empty)
+prompt_required() {
+  local var_name="$1"
+  local description="$2"
+  local value=""
+  while [ -z "$value" ]; do
+    print_cyan "$description: "
+    read -r value
+    if [ -z "$value" ]; then
+      print_red "  This field is required. Please enter a value."
+    fi
+  done
+  eval "$var_name=\"$value\""
+}
+
+# Prompt for an optional value with a default
+prompt_optional() {
+  local var_name="$1"
+  local description="$2"
+  local default="$3"
+  if [ -n "$default" ]; then
+    print_cyan "$description [${default}]: "
+  else
+    print_cyan "$description (optional): "
+  fi
+  read -r value
+  if [ -z "$value" ]; then
+    value="$default"
+  fi
+  eval "$var_name=\"$value\""
+}
+
+# Ask yes/no, default to the provided value
+confirm() {
+  local prompt="$1"
+  local default="${2:-y}"
+  if [ "$default" = "y" ]; then
+    print_cyan "$prompt [Y/n]: "
+  else
+    print_cyan "$prompt [y/N]: "
+  fi
+  read -r answer
+  answer="${answer:-$default}"
+  case "$answer" in
+    [yY]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+echo ""
+print_green "========================================="
+print_green "  Claude-Code-DC-Bot Setup"
+print_green "========================================="
+echo ""
+
+# ─── Part 1: .env ───────────────────────────────────────────────
+
+created_env=false
+
+setup_env() {
+  if [ -f .env ]; then
+    print_yellow "Warning: .env already exists."
+    if ! confirm "Overwrite it?" "n"; then
+      echo "Skipping .env setup."
+      return
+    fi
+    echo ""
+  fi
+
+  echo "Enter your Discord credentials and bot settings."
+  echo "Required fields cannot be left empty."
+  echo ""
+
+  # Required
+  prompt_required DISCORD_BOT_TOKEN    "Discord Bot Token"
+  prompt_required DISCORD_CLIENT_ID    "Discord Application Client ID"
+  prompt_required DISCORD_GUILD_ID     "Discord Server (Guild) ID"
+  prompt_required DISCORD_CHANNEL_ID   "Channel ID (bot operates in this channel)"
+  prompt_required ALLOWED_USER_IDS     "Allowed user IDs (comma-separated)"
+
+  echo ""
+  echo "Optional settings (press Enter to keep defaults):"
+  echo ""
+
+  # Optional
+  prompt_optional DEFAULT_MODEL            "Default model"                                        "claude-opus-4-6"
+  prompt_optional DEFAULT_CWD              "Default working directory"                            ""
+  prompt_optional DEFAULT_PERMISSION_MODE  "Default permission mode (default|acceptEdits|bypassPermissions)" "default"
+  prompt_optional RATE_LIMIT_WINDOW_MS     "Rate limit window in ms"                              "60000"
+  prompt_optional RATE_LIMIT_MAX_REQUESTS  "Rate limit max requests per window"                   "5"
+
+  # Write .env
+  cat > .env << EOF
+# Discord Bot Token (from Discord Developer Portal)
+DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+
+# Discord Application Client ID (for registering Slash Commands)
+DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+
+# Discord Server ID
+DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+
+# Channel ID (Bot only operates in this channel)
+DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+
+# Allowed user IDs (comma-separated)
+ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
+
+# Default model
+DEFAULT_MODEL=${DEFAULT_MODEL}
+
+# Default working directory (optional, falls back to the first project in projects.json)
+DEFAULT_CWD=${DEFAULT_CWD}
+
+# Default permission mode (default | acceptEdits | bypassPermissions)
+DEFAULT_PERMISSION_MODE=${DEFAULT_PERMISSION_MODE}
+
+# Rate Limiting (optional)
+RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS}
+RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS}
+EOF
+
+  created_env=true
+  echo ""
+  print_green ".env file created successfully!"
+}
+
+# ─── Part 2: projects.json ──────────────────────────────────────
+
+created_projects=false
+
+setup_projects() {
+  echo ""
+
+  if [ -f projects.json ]; then
+    print_yellow "Warning: projects.json already exists."
+    if ! confirm "Overwrite it?" "n"; then
+      echo "Skipping projects.json setup."
+      return
+    fi
+    echo ""
+  fi
+
+  echo "Add projects that the bot can operate in."
+  echo "Each project needs a name and an absolute path."
+  echo ""
+
+  local projects="["
+  local first=true
+
+  while true; do
+    local name=""
+    local path=""
+
+    prompt_required name "Project name"
+
+    while true; do
+      prompt_required path "Absolute path to project"
+      if [ -d "$path" ]; then
+        break
+      else
+        print_red "  Directory not found: $path"
+        print_yellow "  Please enter a valid path."
+      fi
+    done
+
+    if [ "$first" = true ]; then
+      projects="${projects}
+  { \"name\": \"${name}\", \"path\": \"${path}\" }"
+      first=false
+    else
+      projects="${projects},
+  { \"name\": \"${name}\", \"path\": \"${path}\" }"
+    fi
+
+    echo ""
+    if ! confirm "Add another project?" "n"; then
+      break
+    fi
+    echo ""
+  done
+
+  projects="${projects}
+]"
+
+  echo "$projects" > projects.json
+
+  created_projects=true
+  echo ""
+  print_green "projects.json created successfully!"
+}
+
+# ─── Run ────────────────────────────────────────────────────────
+
+setup_env
+setup_projects
+
+# ─── Summary ────────────────────────────────────────────────────
+
+echo ""
+print_green "========================================="
+print_green "  Setup Complete!"
+print_green "========================================="
+echo ""
+
+if [ "$created_env" = true ]; then
+  print_green "  Created: .env"
+fi
+if [ "$created_projects" = true ]; then
+  print_green "  Created: projects.json"
+fi
+
+if [ "$created_env" = false ] && [ "$created_projects" = false ]; then
+  print_yellow "  No files were modified."
+else
+  echo ""
+  echo "Next steps:"
+  echo "  1. npm run deploy-commands   # Register slash commands"
+  echo "  2. npm run dev               # Start the bot"
+fi
+echo ""

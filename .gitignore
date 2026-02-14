@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+projects.json
+*.log
+docs/
+.claude/
+CLAUDE.md
+coverage
+package-lock.json
