@@ -2,6 +2,7 @@ import { MessageFlags, SlashCommandBuilder, type ChatInputCommandInteraction } f
 import type { BotConfig } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import type { UsageStore } from '../effects/usage-store.js';
+import type { QueueStore } from '../effects/queue-store.js';
 import { canExecuteCommand } from '../modules/permissions.js';
 import { buildStatusEmbed, buildGlobalStatusEmbed } from '../modules/embeds.js';
 import { deferReplyEphemeral, editReply } from '../effects/discord-sender.js';
@@ -24,6 +25,7 @@ export async function execute(
   config: BotConfig,
   store: StateStore,
   usageStore: UsageStore,
+  queueStore?: QueueStore,
 ): Promise<void> {
   const auth = canExecuteCommand(interaction.user.id, config);
   if (!auth.allowed) {
@@ -48,5 +50,31 @@ export async function execute(
   const globalStats = usageStore.getGlobalStats();
   const userUsage = usageStore.getAllUserUsage();
   const embed = buildGlobalStatusEmbed(globalStats, activeSessions, userUsage);
-  await editReply(interaction, { embeds: [embed] });
+
+  // Add queue info if there are queued sessions
+  const embeds = [embed];
+  if (queueStore && queueStore.getTotalQueuedCount() > 0) {
+    const allQueues = queueStore.getAllQueues();
+    let queueText = '';
+    for (const [cwd, entries] of allQueues) {
+      const projectPath = cwd.split('/').pop() ?? cwd;
+      queueText += `**${projectPath}** — ${entries.length} queued\n`;
+      for (const entry of entries.slice(0, 3)) {
+        queueText += `  → <#${entry.threadId}>\n`;
+      }
+      if (entries.length > 3) {
+        queueText += `  ... and ${entries.length - 3} more\n`;
+      }
+    }
+    embed.fields = [
+      ...(embed.fields ?? []),
+      {
+        name: `📋 Queue (${queueStore.getTotalQueuedCount()} total)`,
+        value: queueText.trim().slice(0, 1024),
+        inline: false,
+      },
+    ];
+  }
+
+  await editReply(interaction, { embeds });
 }

@@ -65,7 +65,8 @@ export type SessionStatus =
   | 'awaiting_permission'
   | 'waiting_input'
   | 'completed'
-  | 'error';
+  | 'error'
+  | 'queued';
 
 /** Complete state of a single Claude Code session, keyed by Discord Thread ID */
 export interface SessionState {
@@ -197,6 +198,33 @@ export interface RepoSummary {
   totalUsage: TokenUsage;
 }
 
+// ─── Session Queue ────────────────────────────────────
+
+/** A queued prompt waiting for its project to become available */
+export interface QueueEntry {
+  id: string;
+  userId: string;
+  promptText: string;
+  cwd: string;
+  model: string;
+  threadId: string;
+  queuedAt: Date;
+}
+
+// ─── Session Recovery ──────────────────────────────────
+
+/** Serializable snapshot of a session for recovery after bot restart */
+export interface RecoverableSession {
+  threadId: string;
+  userId: string;
+  promptText: string;
+  cwd: string;
+  model: string;
+  status: string;
+  startedAt: string;
+  lastActivityAt: string;
+}
+
 // ─── Display ──────────────────────────────────────────
 
 /** Formatted display info for tool usage, used to build Discord Embeds */
@@ -272,4 +300,5 @@ export const SESSION_STATUS_NAMES: Record<SessionStatus, string> = {
   waiting_input: 'Waiting for Input',
   completed: 'Completed',
   error: 'Error',
+  queued: 'Queued',
 };

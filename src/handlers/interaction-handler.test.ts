@@ -6,6 +6,18 @@ import { createInteractionHandler } from './interaction-handler.js';
 import type { BotConfig, PendingApproval } from '../types.js';
 import type { RateLimitStore } from '../effects/rate-limit-store.js';
 
+// Mock discord-sender for recovery tests
+vi.mock('../effects/discord-sender.js', () => ({
+  sendInThread: vi.fn().mockResolvedValue({ id: 'msg1' }),
+  sendTextInThread: vi.fn().mockResolvedValue([]),
+}));
+
+// Mock embeds for recovery tests
+vi.mock('../modules/embeds.js', () => ({
+  buildSessionStartEmbed: vi.fn().mockReturnValue({ title: 'Start' }),
+  buildErrorEmbed: vi.fn().mockReturnValue({ title: 'Error' }),
+}));
+
 // Mock all command modules
 vi.mock('../commands/prompt.js', () => ({
   execute: vi.fn().mockResolvedValue(undefined),
@@ -91,13 +103,17 @@ function makeSlashInteraction(commandName: string) {
   } as unknown;
 }
 
-function makeButtonInteraction(customId: string) {
+function makeButtonInteraction(customId: string, extras: Record<string, unknown> = {}) {
   return {
     isChatInputCommand: () => false,
     isButton: () => true,
     isModalSubmit: () => false,
     customId,
     reply: vi.fn().mockResolvedValue(undefined),
+    update: vi.fn().mockResolvedValue(undefined),
+    followUp: vi.fn().mockResolvedValue(undefined),
+    user: { id: 'user1' },
+    ...extras,
   } as unknown;
 }
 
@@ -294,7 +310,7 @@ describe('createInteractionHandler', () => {
       expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
         expect.objectContaining({ content: '🛑 Task has been stopped' }),
       );
-      expect(stopCmd.executeStop).toHaveBeenCalledWith('t1', store, deps.client);
+      expect(stopCmd.executeStop).toHaveBeenCalledWith('t1', store, deps.client, deps.queueStore);
     });
 
     it('confirm_stop replies ended when no session', async () => {
@@ -376,6 +392,117 @@ describe('createInteractionHandler', () => {
       await handler(interaction as never);
       expect(handleAskModalSubmit).toHaveBeenCalledWith(
         interaction, 't1', 0, expect.any(Object),
+      );
+    });
+  });
+
+  describe('Recovery button interactions', () => {
+    function makeRecoveryDeps(store?: StateStore) {
+      return {
+        config: { ...mockConfig, projects: [{ name: 'test', path: '/test' }] },
+        store: store || new StateStore(),
+        client: {
+          channels: {
+            fetch: vi.fn().mockResolvedValue({
+              isThread: () => true,
+              id: 't1',
+              archived: false,
+              setArchived: vi.fn(),
+              send: vi.fn().mockResolvedValue({ id: 'msg1' }),
+            }),
+          },
+        } as never,
+        startClaudeQuery: vi.fn().mockResolvedValue(undefined),
+        rateLimitStore: { getEntry: vi.fn(), setEntry: vi.fn() } as unknown as RateLimitStore,
+        usageStore: new UsageStore(),
+        summaryStore: {} as never,
+        recoveryStore: { persist: vi.fn(), remove: vi.fn() },
+      };
+    }
+
+    it('recovery_retry rejects unauthorized user', async () => {
+      const deps = makeRecoveryDeps();
+      const handler = createInteractionHandler(deps);
+      const interaction = makeButtonInteraction('recovery_retry:t1', {
+        user: { id: 'unauthorized-user' },
+      });
+      await handler(interaction as never);
+      expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: expect.stringContaining('do not have permission') }),
+      );
+    });
+
+    it('recovery_retry rejects disallowed cwd', async () => {
+      const deps = makeRecoveryDeps();
+      (deps.config as { projects: Array<{ name: string; path: string }> }).projects = [{ name: 'other', path: '/other' }];
+      const handler = createInteractionHandler(deps);
+      const interaction = makeButtonInteraction('recovery_retry:t1', {
+        message: {
+          embeds: [{
+            description: 'Test prompt',
+            fields: [{ name: 'Working Directory', value: '`/disallowed`' }],
+          }],
+        },
+      });
+      await handler(interaction as never);
+      expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: expect.stringContaining('no longer in the allowed project list') }),
+      );
+    });
+
+    it('recovery_retry starts session for authorized user with valid cwd', async () => {
+      const deps = makeRecoveryDeps();
+      const handler = createInteractionHandler(deps);
+      const interaction = makeButtonInteraction('recovery_retry:t1', {
+        message: {
+          embeds: [{
+            description: 'Test prompt',
+            fields: [{ name: 'Working Directory', value: '`/test`' }],
+          }],
+        },
+      });
+      await handler(interaction as never);
+      expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: expect.stringContaining('Retrying') }),
+      );
+      expect(deps.startClaudeQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('recovery_dismiss removes buttons and acknowledges', async () => {
+      const deps = makeRecoveryDeps();
+      const handler = createInteractionHandler(deps);
+      const interaction = makeButtonInteraction('recovery_dismiss:t1');
+      await handler(interaction as never);
+      expect((interaction as Record<string, unknown>).update).toHaveBeenCalledWith({ components: [] });
+      expect((interaction as Record<string, unknown>).followUp).toHaveBeenCalledWith(
+        expect.objectContaining({ content: '✅ Dismissed' }),
+      );
+    });
+
+    it('recovery_retry rejects when session already running', async () => {
+      const store = new StateStore();
+      store.setSession('t1', {
+        sessionId: null,
+        status: 'running',
+        threadId: 't1',
+        userId: 'u1',
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+        promptText: 'test',
+        cwd: '/test',
+        model: 'model',
+        toolCount: 0,
+        tools: {},
+        pendingApproval: null,
+        abortController: new AbortController(),
+        transcript: [],
+      });
+      const deps = makeRecoveryDeps(store);
+      const handler = createInteractionHandler(deps);
+      const interaction = makeButtonInteraction('recovery_retry:t1');
+      await handler(interaction as never);
+      expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: expect.stringContaining('already active') }),
       );
     });
   });

@@ -10,8 +10,9 @@ import {
 } from 'discord.js';
 import type { BotConfig } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
+import type { QueueStore } from '../effects/queue-store.js';
 import { canExecuteCommand } from '../modules/permissions.js';
-import { buildStopPreviewEmbed, buildStopConfirmEmbed } from '../modules/embeds.js';
+import { buildStopPreviewEmbed, buildStopConfirmEmbed, buildNotificationEmbed } from '../modules/embeds.js';
 import { deferReply, editReply, sendInThread } from '../effects/discord-sender.js';
 import { resolveThreadId } from '../modules/session-resolver.js';
 
@@ -84,15 +85,37 @@ export async function execute(
  * @param threadId - Thread ID of the session to abort
  * @param store - Session state store
  * @param client - Discord Client instance, used to fetch the thread channel
+ * @param queueStore - Queue store (optional, for cancelling queued sessions)
  * @returns void
  */
 export async function executeStop(
   threadId: string,
   store: StateStore,
   client: Client,
+  queueStore?: QueueStore,
 ): Promise<void> {
   const session = store.getSession(threadId);
   if (!session) return;
+
+  // If queued, cancel from queue instead of aborting SDK
+  if (session.status === 'queued' && queueStore) {
+    queueStore.cancel(session.cwd, threadId);
+
+    try {
+      const channel = await client.channels.fetch(threadId);
+      if (channel?.isThread()) {
+        const thread = channel as ThreadChannel;
+        const embed = buildNotificationEmbed('📋 Queued task has been cancelled.');
+        await sendInThread(thread, embed);
+        await thread.setArchived(true);
+      }
+    } catch {
+      // Thread may no longer exist
+    }
+
+    store.clearSession(threadId);
+    return;
+  }
 
   // Abort execution
   session.abortController.abort();

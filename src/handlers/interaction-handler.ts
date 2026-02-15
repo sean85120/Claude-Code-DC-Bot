@@ -1,4 +1,4 @@
-import { MessageFlags, type Interaction, type Client } from 'discord.js';
+import { MessageFlags, type Interaction, type Client, type ThreadChannel } from 'discord.js';
 import type { BotConfig, SessionState } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import * as statusCmd from '../commands/status.js';
@@ -18,6 +18,15 @@ import {
   handleAskOther,
   handleAskModalSubmit,
 } from './ask-handler.js';
+import type { SessionRecoveryStore } from '../effects/session-recovery-store.js';
+import type { QueueStore } from '../effects/queue-store.js';
+import { sendInThread, sendTextInThread } from '../effects/discord-sender.js';
+import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
+import { truncate } from '../modules/formatters.js';
+import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
+import { logger } from '../effects/logger.js';
+
+const log = logger.child({ module: 'Interaction' });
 
 /** Dependency injection interface for the interaction handler */
 export interface InteractionHandlerDeps {
@@ -28,6 +37,8 @@ export interface InteractionHandlerDeps {
   rateLimitStore: RateLimitStore;
   usageStore: UsageStore;
   summaryStore: DailySummaryStore;
+  recoveryStore?: SessionRecoveryStore;
+  queueStore?: QueueStore;
 }
 
 /**
@@ -51,6 +62,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
             deps.startClaudeQuery,
             deps.rateLimitStore,
             deps.client,
+            deps.queueStore,
           );
           break;
 
@@ -59,7 +71,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           break;
 
         case 'status':
-          await statusCmd.execute(interaction, deps.config, deps.store, deps.usageStore);
+          await statusCmd.execute(interaction, deps.config, deps.store, deps.usageStore, deps.queueStore);
           break;
 
         case 'history':
@@ -142,13 +154,121 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
         }
 
         await interaction.reply({ content: '🛑 Task has been stopped', flags: [MessageFlags.Ephemeral] });
-        await stopCmd.executeStop(threadId, deps.store, deps.client);
+        await stopCmd.executeStop(threadId, deps.store, deps.client, deps.queueStore);
         return;
       }
 
       // Cancel stop
       if (customId.startsWith('cancel_stop:')) {
         await interaction.reply({ content: '✅ Stop cancelled', flags: [MessageFlags.Ephemeral] });
+        return;
+      }
+
+      // Recovery retry — re-run interrupted session prompt
+      if (customId.startsWith('recovery_retry:')) {
+        const threadId = customId.slice('recovery_retry:'.length);
+
+        // Authorization check (#3)
+        const auth = canExecuteCommand(interaction.user.id, deps.config);
+        if (!auth.allowed) {
+          await interaction.reply({ content: `❌ ${auth.reason}`, flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        // Verify thread exists and is a thread
+        try {
+          const channel = await deps.client.channels.fetch(threadId);
+          if (!channel?.isThread()) {
+            await interaction.reply({ content: '⚠️ Thread no longer exists', flags: [MessageFlags.Ephemeral] });
+            return;
+          }
+          const thread = channel as ThreadChannel;
+
+          // Check no active session in this thread (running, awaiting_permission, or waiting_input)
+          const existingSession = deps.store.getSession(threadId);
+          if (existingSession && (existingSession.status === 'running' || existingSession.status === 'awaiting_permission' || existingSession.status === 'waiting_input')) {
+            await interaction.reply({ content: '⚠️ A session is already active in this thread', flags: [MessageFlags.Ephemeral] });
+            return;
+          }
+
+          // We need the original prompt info from the button message embed
+          const message = interaction.message;
+          const embed = message?.embeds?.[0];
+          const promptText = embed?.description || 'Retry interrupted session';
+          const cwdField = embed?.fields?.find((f) => f.name === 'Working Directory');
+          const cwd = cwdField?.value?.replace(/`/g, '') || deps.config.defaultCwd;
+
+          // Validate cwd against allowed project list (#2)
+          if (!isAllowedCwd(cwd, deps.config.projects)) {
+            await interaction.reply({ content: '❌ The working directory is no longer in the allowed project list.', flags: [MessageFlags.Ephemeral] });
+            return;
+          }
+
+          // Check if project is already busy (consistent with queue system concurrency rules)
+          if (deps.queueStore?.isProjectBusy(cwd, deps.store)) {
+            await interaction.reply({ content: '⚠️ Another session is currently active on this project. Please wait or use /stop first.', flags: [MessageFlags.Ephemeral] });
+            return;
+          }
+
+          const model = deps.config.defaultModel;
+
+          // Create new session
+          const abortController = new AbortController();
+          const session: SessionState = {
+            sessionId: null,
+            status: 'running',
+            threadId,
+            userId: interaction.user.id,
+            startedAt: new Date(),
+            lastActivityAt: new Date(),
+            promptText,
+            cwd,
+            model,
+            toolCount: 0,
+            tools: {},
+            pendingApproval: null,
+            abortController,
+            transcript: [{ timestamp: new Date(), type: 'user', content: promptText.slice(0, 2000) }],
+          };
+
+          deps.store.setSession(threadId, session);
+
+          // Persist to recovery store
+          deps.recoveryStore?.persist(session);
+
+          await interaction.reply({ content: '🔄 Retrying interrupted session...', flags: [MessageFlags.Ephemeral] });
+
+          // Send start embed
+          const startEmbed = buildSessionStartEmbed(promptText, cwd, model);
+          await sendInThread(thread, startEmbed);
+
+          // Start query
+          deps.startClaudeQuery(session, threadId).catch(async (error) => {
+            log.error({ err: error, threadId, prompt: truncate(promptText, 40) }, 'Recovery retry error');
+            const errorEmbed = buildErrorEmbed(error instanceof Error ? error.message : String(error));
+            try {
+              await sendInThread(thread, errorEmbed);
+            } catch {
+              // Thread may no longer exist
+            }
+            deps.store.clearSession(threadId);
+            deps.recoveryStore?.remove(threadId);
+          });
+        } catch (error) {
+          log.error({ err: error, threadId }, 'Recovery retry failed');
+          await interaction.reply({ content: '❌ Failed to retry session', flags: [MessageFlags.Ephemeral] });
+        }
+        return;
+      }
+
+      // Recovery dismiss — remove buttons and acknowledge
+      if (customId.startsWith('recovery_dismiss:')) {
+        try {
+          await interaction.update({ components: [] });
+        } catch {
+          // Message may have already been updated
+        }
+        await interaction.followUp({ content: '✅ Dismissed', flags: [MessageFlags.Ephemeral] });
         return;
       }
 

@@ -40,6 +40,16 @@ describe('formatToolInput', () => {
       expect(result.fields![0].value).toContain('3 lines');
     });
 
+    it('shows content preview', () => {
+      const result = formatToolInput('Write', {
+        file_path: `${CWD}/out.ts`,
+        content: 'const x = 1;\nconst y = 2;',
+      }, CWD);
+      expect(result.fields).toHaveLength(2);
+      expect(result.fields![1].name).toContain('Preview');
+      expect(result.fields![1].value).toContain('const x = 1;');
+    });
+
     it('has no fields when content is absent', () => {
       const result = formatToolInput('Write', { file_path: `${CWD}/out.ts` }, CWD);
       expect(result.fields).toBeUndefined();
@@ -47,21 +57,54 @@ describe('formatToolInput', () => {
   });
 
   describe('Edit', () => {
-    it('shows diff', () => {
+    it('shows unified diff with Changes field', () => {
       const result = formatToolInput('Edit', {
         file_path: `${CWD}/file.ts`,
-        old_string: 'old',
-        new_string: 'new',
+        old_string: 'old line',
+        new_string: 'new line',
       }, CWD);
       expect(result.title).toBe('Edit File');
       expect(result.fields).toHaveLength(2);
-      expect(result.fields![0].name).toContain('Remove');
-      expect(result.fields![1].name).toContain('Add');
+      expect(result.fields![0].name).toContain('Changes');
+      expect(result.fields![0].value).toContain('-old line');
+      expect(result.fields![0].value).toContain('+new line');
     });
 
-    it('has no diff fields when old_string or new_string is missing', () => {
-      const result = formatToolInput('Edit', { file_path: `${CWD}/file.ts`, old_string: 'old' }, CWD);
+    it('shows diff summary with line counts', () => {
+      const result = formatToolInput('Edit', {
+        file_path: `${CWD}/file.ts`,
+        old_string: 'line1\nline2',
+        new_string: 'line1\nline2\nline3',
+      }, CWD);
+      expect(result.fields![1].name).toContain('Summary');
+      expect(result.fields![1].value).toContain('2');
+      expect(result.fields![1].value).toContain('3');
+    });
+
+    it('shows new content field when only new_string is provided', () => {
+      const result = formatToolInput('Edit', {
+        file_path: `${CWD}/file.ts`,
+        new_string: 'brand new content',
+      }, CWD);
+      expect(result.fields).toHaveLength(1);
+      expect(result.fields![0].name).toContain('New Content');
+      expect(result.fields![0].value).toContain('brand new content');
+    });
+
+    it('has no diff fields when old_string and new_string are both missing', () => {
+      const result = formatToolInput('Edit', { file_path: `${CWD}/file.ts` }, CWD);
       expect(result.fields).toBeUndefined();
+    });
+
+    it('shows multi-line unified diff with context', () => {
+      const result = formatToolInput('Edit', {
+        file_path: `${CWD}/file.ts`,
+        old_string: 'function foo(a) {\n  return a + 1;\n}',
+        new_string: 'function foo(a, b) {\n  return a + b;\n}',
+      }, CWD);
+      expect(result.fields![0].value).toContain('-function foo(a)');
+      expect(result.fields![0].value).toContain('+function foo(a, b)');
+      expect(result.fields![0].value).toContain(' }');
     });
   });
 

@@ -16,13 +16,17 @@ import { createInteractionHandler } from './handlers/interaction-handler.js';
 import { startQuery } from './effects/claude-bridge.js';
 import { createMessageHandler } from './handlers/stream-handler.js';
 import { createCanUseTool } from './handlers/permission-handler.js';
-import { buildErrorEmbed, buildWaitingInputEmbed, buildOrphanCleanupEmbed, buildIdleCleanupEmbed } from './modules/embeds.js';
+import { buildErrorEmbed, buildWaitingInputEmbed, buildOrphanCleanupEmbed, buildIdleCleanupEmbed, buildQueueStartEmbed } from './modules/embeds.js';
 import { sendInThread, sendTextInThread } from './effects/discord-sender.js';
 import { createThreadMessageHandler } from './handlers/thread-message-handler.js';
 import { UsageStore } from './effects/usage-store.js';
 import { checkClaudeStatus } from './effects/startup-check.js';
 import { DailySummaryStore } from './effects/daily-summary-store.js';
+import { SessionRecoveryStore } from './effects/session-recovery-store.js';
+import { QueueStore } from './effects/queue-store.js';
 import { startSummaryScheduler } from './handlers/summary-scheduler.js';
+import { buildRecoveryEmbed } from './modules/embeds.js';
+import { sendEmbedWithRecoveryButton } from './effects/discord-sender.js';
 
 // Load .env
 loadEnv();
@@ -42,6 +46,8 @@ async function main() {
   const rateLimitStore = new RateLimitStore();
   const usageStore = new UsageStore();
   const summaryStore = new DailySummaryStore();
+  const recoveryStore = new SessionRecoveryStore();
+  const queueStore = new QueueStore();
 
   // Claude query launch function
   async function startClaudeQuery(session: SessionState, threadId: string): Promise<void> {
@@ -73,6 +79,9 @@ async function main() {
     });
 
     // Start Claude query (supports resume + image attachments)
+    // Persist session for recovery
+    recoveryStore.persist(session);
+
     claudeLog.info(
       { threadId, prompt: truncate(session.promptText, 60), model: session.model, cwd: session.cwd, resume: !!session.sessionId },
       'Query started',
@@ -89,6 +98,7 @@ async function main() {
         messageHandler(message);
       },
       onError: async (error) => {
+        recoveryStore.remove(threadId);
         const s = store.getSession(threadId);
         claudeLog.error({ err: error, threadId, prompt: truncate(s?.promptText ?? '', 40) }, 'Execution error');
         try {
@@ -107,6 +117,7 @@ async function main() {
         store.updateSession(threadId, { status: 'error' });
       },
       onComplete: async () => {
+        recoveryStore.remove(threadId);
         const s = store.getSession(threadId);
         const elapsed = s ? Date.now() - s.startedAt.getTime() : 0;
         claudeLog.info({ threadId, prompt: truncate(s?.promptText ?? '', 40), duration: formatDuration(elapsed) }, 'Query completed');
@@ -150,6 +161,46 @@ async function main() {
         } catch {
           // Thread may no longer exist
         }
+
+        // Process queue: start next valid queued session for this project
+        // Loop to skip entries that were cancelled via /stop while queued (#1)
+        if (s) {
+          let nextEntry = queueStore.dequeue(s.cwd);
+          while (nextEntry) {
+            const queuedSession = store.getSession(nextEntry.threadId);
+            if (queuedSession && queuedSession.status === 'queued') {
+              store.updateSession(nextEntry.threadId, {
+                status: 'running',
+                abortController: new AbortController(),
+              });
+
+              log.info({ threadId: nextEntry.threadId, cwd: s.cwd, prompt: truncate(nextEntry.promptText, 40) }, 'Starting queued session');
+
+              // Send "your turn" notification in the queued thread
+              try {
+                const queuedChannel = await client.channels.fetch(nextEntry.threadId);
+                if (queuedChannel?.isThread()) {
+                  const queuedThread = queuedChannel as ThreadChannel;
+                  await sendInThread(queuedThread, buildQueueStartEmbed(nextEntry.promptText));
+                  await sendTextInThread(queuedThread, `<@${nextEntry.userId}> Your queued task is now starting.`);
+                }
+              } catch {
+                // Thread may no longer exist
+              }
+
+              const updatedSession = store.getSession(nextEntry.threadId);
+              if (updatedSession) {
+                startClaudeQuery(updatedSession, nextEntry.threadId).catch(async (error) => {
+                  claudeLog.error({ err: error, threadId: nextEntry!.threadId }, 'Queued session error');
+                  store.clearSession(nextEntry!.threadId);
+                });
+              }
+              break;
+            }
+            // Entry was cancelled or invalid — try the next one
+            nextEntry = queueStore.dequeue(s.cwd);
+          }
+        }
       },
     });
 
@@ -171,6 +222,8 @@ async function main() {
     rateLimitStore,
     usageStore,
     summaryStore,
+    recoveryStore,
+    queueStore,
   });
 
   // Create Thread message handler (for follow-up questions)
@@ -187,6 +240,27 @@ async function main() {
   client = await createDiscordClient(config, handler, async (message) => {
     await threadMessageHandler(message);
   });
+
+  // ─── Session Recovery: notify users about interrupted sessions ───
+  const recoverableSessions = recoveryStore.getRecoverableSessions();
+  if (recoverableSessions.length > 0) {
+    log.info({ count: recoverableSessions.length }, 'Found interrupted sessions to recover');
+    for (const recSession of recoverableSessions) {
+      try {
+        const channel = await client.channels.fetch(recSession.threadId);
+        if (channel?.isThread()) {
+          const thread = channel as ThreadChannel;
+          const embed = buildRecoveryEmbed(recSession.promptText, recSession.cwd, recSession.startedAt);
+          await sendEmbedWithRecoveryButton(thread, embed, recSession.threadId);
+          await sendTextInThread(thread, `<@${recSession.userId}> This session was interrupted by a bot restart. Click **Retry** to re-run.`);
+        }
+      } catch {
+        // Thread may no longer exist
+      }
+      // Clear per-session after notification attempt (even if thread is gone)
+      recoveryStore.remove(recSession.threadId);
+    }
+  }
 
   // Clean up orphan Threads on startup (across all repo channels)
   try {
