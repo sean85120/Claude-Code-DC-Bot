@@ -11,6 +11,7 @@ import type { BotConfig, SessionState, Project, QueueEntry } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import type { RateLimitStore } from '../effects/rate-limit-store.js';
 import type { QueueStore } from '../effects/queue-store.js';
+import type { BudgetStore } from '../effects/budget-store.js';
 import { logger } from '../effects/logger.js';
 import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
 
@@ -77,6 +78,7 @@ export async function execute(
   rateLimitStore?: RateLimitStore,
   client?: Client,
   queueStore?: QueueStore,
+  budgetStore?: BudgetStore,
 ): Promise<void> {
   const auth = canExecuteCommand(interaction.user.id, config);
   if (!auth.allowed) {
@@ -95,6 +97,18 @@ export async function execute(
       const waitSec = Math.ceil((rateLimitResult.retryAfterMs ?? 0) / 1000);
       await interaction.reply({
         content: `⚠️ Too many requests, please try again in ${waitSec} seconds`,
+        flags: [MessageFlags.Ephemeral],
+      });
+      return;
+    }
+  }
+
+  // Budget check
+  if (budgetStore) {
+    const budgetResult = budgetStore.checkBudget(config);
+    if (budgetResult) {
+      await interaction.reply({
+        content: `🚫 **${budgetResult.period}** budget exceeded — $${budgetResult.spent.toFixed(2)} / $${budgetResult.limit.toFixed(2)}. Use \`/budget view\` for details.`,
         flags: [MessageFlags.Ephemeral],
       });
       return;

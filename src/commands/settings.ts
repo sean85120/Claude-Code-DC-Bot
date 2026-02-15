@@ -29,6 +29,10 @@ const EDITABLE_KEYS = [
   'HIDE_SEARCH_RESULTS',
   'HIDE_ALL_TOOL_EMBEDS',
   'COMPACT_TOOL_EMBEDS',
+  'BUDGET_DAILY_LIMIT_USD',
+  'BUDGET_WEEKLY_LIMIT_USD',
+  'BUDGET_MONTHLY_LIMIT_USD',
+  'SHOW_GIT_SUMMARY',
 ] as const;
 
 type EditableKey = (typeof EDITABLE_KEYS)[number];
@@ -44,6 +48,10 @@ const KEY_TO_CONFIG: Record<EditableKey, keyof BotConfig> = {
   HIDE_SEARCH_RESULTS: 'hideSearchResults',
   HIDE_ALL_TOOL_EMBEDS: 'hideAllToolEmbeds',
   COMPACT_TOOL_EMBEDS: 'compactToolEmbeds',
+  BUDGET_DAILY_LIMIT_USD: 'budgetDailyLimitUsd',
+  BUDGET_WEEKLY_LIMIT_USD: 'budgetWeeklyLimitUsd',
+  BUDGET_MONTHLY_LIMIT_USD: 'budgetMonthlyLimitUsd',
+  SHOW_GIT_SUMMARY: 'showGitSummary',
 };
 
 /**
@@ -117,6 +125,10 @@ async function handleView(
     `**HIDE_SEARCH_RESULTS** — \`${config.hideSearchResults}\``,
     `**HIDE_ALL_TOOL_EMBEDS** — \`${config.hideAllToolEmbeds}\``,
     `**COMPACT_TOOL_EMBEDS** — \`${config.compactToolEmbeds}\``,
+    `**BUDGET_DAILY_LIMIT_USD** — \`${config.budgetDailyLimitUsd}\``,
+    `**BUDGET_WEEKLY_LIMIT_USD** — \`${config.budgetWeeklyLimitUsd}\``,
+    `**BUDGET_MONTHLY_LIMIT_USD** — \`${config.budgetMonthlyLimitUsd}\``,
+    `**SHOW_GIT_SUMMARY** — \`${config.showGitSummary}\``,
   ];
 
   await interaction.reply({
@@ -156,7 +168,9 @@ async function handleUpdate(
   const typedConfig = config as unknown as Record<string, unknown>;
   if (key === 'RATE_LIMIT_WINDOW_MS' || key === 'RATE_LIMIT_MAX_REQUESTS') {
     typedConfig[configField] = parseInt(value, 10);
-  } else if (key === 'HIDE_READ_RESULTS' || key === 'HIDE_SEARCH_RESULTS' || key === 'HIDE_ALL_TOOL_EMBEDS' || key === 'COMPACT_TOOL_EMBEDS') {
+  } else if (key === 'BUDGET_DAILY_LIMIT_USD' || key === 'BUDGET_WEEKLY_LIMIT_USD' || key === 'BUDGET_MONTHLY_LIMIT_USD') {
+    typedConfig[configField] = parseFloat(value);
+  } else if (key === 'HIDE_READ_RESULTS' || key === 'HIDE_SEARCH_RESULTS' || key === 'HIDE_ALL_TOOL_EMBEDS' || key === 'COMPACT_TOOL_EMBEDS' || key === 'SHOW_GIT_SUMMARY') {
     typedConfig[configField] = value === 'true';
   } else {
     typedConfig[configField] = value;
@@ -214,10 +228,21 @@ function validateValue(
     case 'HIDE_SEARCH_RESULTS':
     case 'HIDE_ALL_TOOL_EMBEDS':
     case 'COMPACT_TOOL_EMBEDS':
+    case 'SHOW_GIT_SUMMARY':
       if (value !== 'true' && value !== 'false') {
         return `Value must be \`true\` or \`false\``;
       }
       return null;
+
+    case 'BUDGET_DAILY_LIMIT_USD':
+    case 'BUDGET_WEEKLY_LIMIT_USD':
+    case 'BUDGET_MONTHLY_LIMIT_USD': {
+      const n = parseFloat(value);
+      if (Number.isNaN(n) || n < 0) {
+        return `Value must be a non-negative number`;
+      }
+      return null;
+    }
 
     default:
       return null;

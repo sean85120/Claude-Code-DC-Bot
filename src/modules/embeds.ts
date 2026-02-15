@@ -3,6 +3,8 @@ import type {
   AskState,
   SessionState,
   TokenUsage,
+  GitDiffSummary,
+  BudgetWarning,
 } from '../types.js';
 import type { GlobalUsageStats, SessionUsageRecord, UserUsageRecord } from '../effects/usage-store.js';
 import {
@@ -814,6 +816,49 @@ export function buildRecoveryEmbed(promptText: string, cwd: string, startedAt: s
       { name: 'Originally Started', value: `<t:${Math.floor(started.getTime() / 1000)}:R>`, inline: true },
       { name: 'Action', value: 'Click the **Retry** button below to re-run this prompt.', inline: false },
     ],
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ─── Git Summary Embed ──────────────────────────────
+
+/**
+ * Build a git diff summary embed
+ * @param diff - Git diff summary data
+ * @returns Git diff summary embed
+ */
+export function buildGitSummaryEmbed(diff: GitDiffSummary): APIEmbed {
+  const fileList = diff.files
+    .slice(0, 15)
+    .map((f) => `\`${f.path}\` | +${f.insertions} -${f.deletions}`)
+    .join('\n');
+
+  return {
+    color: COLORS.Info,
+    author: { name: '📊 Git Changes' },
+    title: `${diff.filesChanged} file${diff.filesChanged === 1 ? '' : 's'} changed, +${diff.insertions} -${diff.deletions}`,
+    description: fileList || 'No details available',
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ─── Budget Warning Embed ───────────────────────────
+
+/**
+ * Build a budget warning embed
+ * @param warnings - Array of budget warnings
+ * @returns Budget warning embed
+ */
+export function buildBudgetWarningEmbed(warnings: BudgetWarning[]): APIEmbed {
+  const lines = warnings.map((w) => {
+    const emoji = w.percentage >= 100 ? '🚫' : '⚠️';
+    return `${emoji} **${w.period}** — ${formatCost(w.spent)} / ${formatCost(w.limit)} (${w.percentage.toFixed(0)}%)`;
+  });
+
+  return {
+    color: warnings.some((w) => w.percentage >= 100) ? COLORS.Error : COLORS.Notification,
+    author: { name: '💰 Budget Warning' },
+    description: lines.join('\n'),
     timestamp: new Date().toISOString(),
   };
 }

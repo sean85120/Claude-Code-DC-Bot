@@ -54,6 +54,14 @@ export interface BotConfig {
   hideAllToolEmbeds: boolean;
   /** Show compact single-line tool embeds instead of full embeds (default: false) */
   compactToolEmbeds: boolean;
+  /** Daily budget limit in USD (0 = unlimited) */
+  budgetDailyLimitUsd: number;
+  /** Weekly budget limit in USD (0 = unlimited) */
+  budgetWeeklyLimitUsd: number;
+  /** Monthly budget limit in USD (0 = unlimited) */
+  budgetMonthlyLimitUsd: number;
+  /** Show git diff summary after session completion (default: true) */
+  showGitSummary: boolean;
 }
 
 // ─── Session ────────────────────────────────────────
@@ -196,6 +204,73 @@ export interface RepoSummary {
   totalSessions: number;
   totalCostUsd: number;
   totalUsage: TokenUsage;
+}
+
+// ─── Budget ──────────────────────────────────────────
+
+/** Result of checking budget limits against current spending */
+export interface BudgetCheckResult {
+  exceeded: boolean;
+  period: 'daily' | 'weekly' | 'monthly';
+  spent: number;
+  limit: number;
+}
+
+/** Warning when spending approaches a budget limit */
+export interface BudgetWarning {
+  period: 'daily' | 'weekly' | 'monthly';
+  spent: number;
+  limit: number;
+  percentage: number;
+}
+
+// ─── Templates ───────────────────────────────────────
+
+/** Saved prompt template */
+export interface PromptTemplate {
+  name: string;
+  promptText: string;
+  cwd: string;
+  model?: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+// ─── Git Integration ─────────────────────────────────
+
+/** Summary of git diff output */
+export interface GitDiffSummary {
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  files: Array<{ path: string; insertions: number; deletions: number }>;
+}
+
+// ─── Scheduled Prompts ───────────────────────────────
+
+/** Schedule type */
+export type ScheduleType = 'daily' | 'weekly' | 'once';
+
+/** Scheduled prompt configuration */
+export interface ScheduledPrompt {
+  id: string;
+  name: string;
+  promptText: string;
+  cwd: string;
+  model?: string;
+  channelId: string;
+  createdBy: string;
+  createdAt: string;
+  enabled: boolean;
+  scheduleType: ScheduleType;
+  /** HH:MM in UTC */
+  time: string;
+  /** Day of week for 'weekly' (0=Sun, 1=Mon, ..., 6=Sat) */
+  dayOfWeek?: number;
+  /** ISO date for 'once' */
+  onceDate?: string;
+  lastRunAt?: string;
+  nextRunAt?: string;
 }
 
 // ─── Session Queue ────────────────────────────────────

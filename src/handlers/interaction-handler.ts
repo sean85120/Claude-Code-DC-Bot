@@ -12,6 +12,9 @@ import type { RateLimitStore } from '../effects/rate-limit-store.js';
 import type { UsageStore } from '../effects/usage-store.js';
 import type { DailySummaryStore } from '../effects/daily-summary-store.js';
 import * as summaryCmd from '../commands/summary.js';
+import * as budgetCmd from '../commands/budget.js';
+import * as templateCmd from '../commands/template.js';
+import * as scheduleCmd from '../commands/schedule.js';
 import {
   handleAskOptionClick,
   handleAskSubmit,
@@ -20,6 +23,9 @@ import {
 } from './ask-handler.js';
 import type { SessionRecoveryStore } from '../effects/session-recovery-store.js';
 import type { QueueStore } from '../effects/queue-store.js';
+import type { BudgetStore } from '../effects/budget-store.js';
+import type { TemplateStore } from '../effects/template-store.js';
+import type { ScheduleStore } from '../effects/schedule-store.js';
 import { sendInThread, sendTextInThread } from '../effects/discord-sender.js';
 import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
 import { truncate } from '../modules/formatters.js';
@@ -39,6 +45,9 @@ export interface InteractionHandlerDeps {
   summaryStore: DailySummaryStore;
   recoveryStore?: SessionRecoveryStore;
   queueStore?: QueueStore;
+  budgetStore?: BudgetStore;
+  templateStore?: TemplateStore;
+  scheduleStore?: ScheduleStore;
 }
 
 /**
@@ -63,6 +72,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
             deps.rateLimitStore,
             deps.client,
             deps.queueStore,
+            deps.budgetStore,
           );
           break;
 
@@ -92,6 +102,32 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
 
         case 'summary':
           await summaryCmd.execute(interaction, deps.config, deps.summaryStore, deps.client);
+          break;
+
+        case 'budget':
+          if (deps.budgetStore) {
+            await budgetCmd.execute(interaction, deps.config, deps.budgetStore);
+          }
+          break;
+
+        case 'template':
+          if (deps.templateStore) {
+            await templateCmd.execute(
+              interaction,
+              deps.config,
+              deps.store,
+              deps.templateStore,
+              deps.startClaudeQuery,
+              deps.client,
+              deps.queueStore,
+            );
+          }
+          break;
+
+        case 'schedule':
+          if (deps.scheduleStore) {
+            await scheduleCmd.execute(interaction, deps.config, deps.scheduleStore);
+          }
           break;
 
         default:

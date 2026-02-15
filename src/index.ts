@@ -24,9 +24,14 @@ import { checkClaudeStatus } from './effects/startup-check.js';
 import { DailySummaryStore } from './effects/daily-summary-store.js';
 import { SessionRecoveryStore } from './effects/session-recovery-store.js';
 import { QueueStore } from './effects/queue-store.js';
+import { BudgetStore } from './effects/budget-store.js';
+import { TemplateStore } from './effects/template-store.js';
+import { ScheduleStore } from './effects/schedule-store.js';
 import { startSummaryScheduler } from './handlers/summary-scheduler.js';
-import { buildRecoveryEmbed } from './modules/embeds.js';
+import { startScheduleRunner } from './handlers/schedule-runner.js';
+import { buildRecoveryEmbed, buildGitSummaryEmbed, buildBudgetWarningEmbed } from './modules/embeds.js';
 import { sendEmbedWithRecoveryButton } from './effects/discord-sender.js';
+import { getGitDiffSummary } from './modules/git-utils.js';
 
 // Load .env
 loadEnv();
@@ -48,6 +53,9 @@ async function main() {
   const summaryStore = new DailySummaryStore();
   const recoveryStore = new SessionRecoveryStore();
   const queueStore = new QueueStore();
+  const budgetStore = new BudgetStore(summaryStore);
+  const templateStore = new TemplateStore();
+  const scheduleStore = new ScheduleStore();
 
   // Claude query launch function
   async function startClaudeQuery(session: SessionState, threadId: string): Promise<void> {
@@ -149,6 +157,24 @@ async function main() {
         store.updateSession(threadId, { status: 'waiting_input' });
 
         try {
+          // Git diff summary (if enabled)
+          if (config.showGitSummary && s) {
+            try {
+              const diff = await getGitDiffSummary(s.cwd);
+              if (diff && diff.filesChanged > 0) {
+                await sendInThread(thread, buildGitSummaryEmbed(diff));
+              }
+            } catch {
+              // Non-fatal — skip git summary
+            }
+          }
+
+          // Budget warning (if >80% of any limit)
+          const budgetWarnings = budgetStore.getWarnings(config);
+          if (budgetWarnings.length > 0) {
+            await sendInThread(thread, buildBudgetWarningEmbed(budgetWarnings));
+          }
+
           // Send waiting-for-input Embed
           const waitEmbed = buildWaitingInputEmbed();
           await sendInThread(thread, waitEmbed);
@@ -224,6 +250,9 @@ async function main() {
     summaryStore,
     recoveryStore,
     queueStore,
+    budgetStore,
+    templateStore,
+    scheduleStore,
   });
 
   // Create Thread message handler (for follow-up questions)
@@ -381,6 +410,16 @@ async function main() {
   // Start daily summary scheduler
   const summaryScheduler = startSummaryScheduler(client, config, summaryStore);
 
+  // Start schedule runner (checks every 60s for due scheduled prompts)
+  const scheduleRunner = startScheduleRunner({
+    client,
+    config,
+    store,
+    scheduleStore,
+    budgetStore,
+    startClaudeQuery,
+  });
+
   const permName = ({ default: 'Default', plan: 'Plan', acceptEdits: 'Accept Edits', bypassPermissions: 'Bypass Permissions' } as Record<string, string>)[config.defaultPermissionMode] ?? config.defaultPermissionMode;
   const botTag = client.user?.tag ?? 'Unknown';
 
@@ -421,6 +460,7 @@ async function main() {
 
     clearInterval(cleanupIntervalId);
     summaryScheduler.cancel();
+    scheduleRunner.cancel();
 
     // Abort all active sessions
     const activeSessions = store.getAllActiveSessions();

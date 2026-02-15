@@ -1,0 +1,71 @@
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { PromptTemplate } from '../types.js';
+import { logger } from './logger.js';
+
+const log = logger.child({ module: 'TemplateStore' });
+
+/**
+ * Persistent template storage, backed by a JSON file.
+ */
+export class TemplateStore {
+  private dataFilePath: string;
+  private templates: PromptTemplate[];
+
+  constructor(dataDir = process.cwd()) {
+    this.dataFilePath = resolve(dataDir, 'templates.json');
+    this.templates = this.loadFromDisk();
+  }
+
+  private loadFromDisk(): PromptTemplate[] {
+    if (!existsSync(this.dataFilePath)) return [];
+    try {
+      const raw = readFileSync(this.dataFilePath, 'utf-8');
+      const data = JSON.parse(raw);
+      return Array.isArray(data) ? data : [];
+    } catch (error) {
+      log.warn({ err: error }, 'Failed to load templates, starting fresh');
+      return [];
+    }
+  }
+
+  private saveToDisk(): void {
+    try {
+      writeFileSync(this.dataFilePath, JSON.stringify(this.templates, null, 2), 'utf-8');
+    } catch (error) {
+      log.error({ err: error }, 'Failed to save templates');
+    }
+  }
+
+  /** Save a new template (overwrites if name exists) */
+  save(template: PromptTemplate): void {
+    const idx = this.templates.findIndex((t) => t.name === template.name);
+    if (idx >= 0) {
+      this.templates[idx] = template;
+    } else {
+      this.templates.push(template);
+    }
+    this.saveToDisk();
+    log.info({ name: template.name }, 'Template saved');
+  }
+
+  /** List all templates */
+  list(): PromptTemplate[] {
+    return [...this.templates];
+  }
+
+  /** Get a template by name */
+  get(name: string): PromptTemplate | undefined {
+    return this.templates.find((t) => t.name === name);
+  }
+
+  /** Delete a template by name. Returns true if found and deleted. */
+  delete(name: string): boolean {
+    const idx = this.templates.findIndex((t) => t.name === name);
+    if (idx < 0) return false;
+    this.templates.splice(idx, 1);
+    this.saveToDisk();
+    log.info({ name }, 'Template deleted');
+    return true;
+  }
+}
