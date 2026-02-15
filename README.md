@@ -35,6 +35,11 @@ Claude Code is powerful but terminal-bound. This bot breaks that limit — you c
 - 📋 **Prompt templates** — Save and reuse frequent prompts via `/template save|list|run|delete`
 - 📊 **Git integration** — Automatic git diff summary posted after each session completion
 - ⏰ **Scheduled prompts** — Run prompts at specific times (daily, weekly, once) via `/schedule`
+- 📋 **Per-project session queue** — When a project is busy, new prompts are automatically queued and started in order when the current session completes
+- 🔄 **Session recovery** — Active sessions are persisted to disk; after a bot restart, users are notified with Retry/Dismiss buttons to re-run interrupted work
+- 📝 **Unified diff display** — Edit tool embeds show a unified diff preview of changes instead of raw input
+- 📄 **Write preview** — Write tool embeds show a content preview with line/character counts
+- 🙈 **Tool embed controls** — Configurable options to hide Read/Search/all tool embeds, or show compact single-line embeds
 
 ---
 
@@ -179,8 +184,12 @@ npm run dev               # 🟢 Start the bot
 | `BUDGET_WEEKLY_LIMIT_USD` | Weekly spending limit in USD (0 = unlimited) | `0` |
 | `BUDGET_MONTHLY_LIMIT_USD` | Monthly spending limit in USD (0 = unlimited) | `0` |
 | `SHOW_GIT_SUMMARY` | Show git diff summary after session completion | `true` |
+| `HIDE_READ_RESULTS` | Hide Read tool embed cards in threads | `false` |
+| `HIDE_SEARCH_RESULTS` | Hide Glob/Grep tool embed cards in threads | `false` |
+| `HIDE_ALL_TOOL_EMBEDS` | Hide all tool embed cards (overrides individual settings) | `false` |
+| `COMPACT_TOOL_EMBEDS` | Show tool embeds as single-line compact cards | `false` |
 
-> 💡 **Tip:** All of these can be changed at runtime via `/settings update` without restarting the bot.
+> 💡 **Tip:** All of these can be changed at runtime via `/settings update` without restarting the bot. After adding new settings keys, run `npm run deploy-commands` to update Discord's slash command choices.
 
 ### 🔐 Permission modes
 
@@ -291,7 +300,8 @@ src/
 - 🧩 **`modules/`** contains pure functions with no side effects — easy to test in isolation
 - ⚡ **`effects/`** encapsulates all I/O (Discord API, Claude SDK, file system)
 - 🔗 **Permission bridge:** `canUseTool` creates a Promise and stores its `resolve` in the `StateStore`. The SDK pauses until a user clicks Approve/Deny in Discord, which resolves the Promise and unblocks execution
-- 💾 **Session state** is keyed by Discord thread ID and stored in memory (cleared on restart)
+- 💾 **Session state** is keyed by Discord thread ID and stored in memory. Active sessions are also persisted to `active-sessions.json` for crash recovery
+- 📋 **Session queue** — Per-project queue ensures only one Claude subprocess runs per project directory at a time, preventing file conflicts
 
 ---
 
@@ -327,6 +337,38 @@ npm test -- src/modules/formatters.test.ts
 
 ---
 
+## 🗺️ Roadmap
+
+### Completed
+
+- [x] Real-time streaming with throttled Discord edits
+- [x] Thread-per-prompt with follow-up conversations and file attachments
+- [x] Tool approval buttons (Approve/Deny) with permission bridge
+- [x] Interactive Q&A (AskUserQuestion) with single-select, multi-select, and free-text
+- [x] Session management (`/stop`, `/retry`, `/history`)
+- [x] Live configuration (`/settings`, `/repos`)
+- [x] Token tracking and per-user usage stats
+- [x] Rate limiting
+- [x] Channel-per-repo routing (auto-creates channels per project)
+- [x] Daily summary reports with per-repository breakdown
+- [x] Tool embed display options (hide Read/Search/all, compact mode)
+- [x] Per-project session queue (prevents concurrent sessions on same repo)
+- [x] Session recovery after bot restart (Retry/Dismiss buttons)
+- [x] Unified diff display for Edit tool and Write content preview
+
+### Planned
+
+- [ ] Persistent queue storage (queued sessions survive restart)
+- [ ] Docker deployment with docker-compose
+- [ ] Web dashboard for session monitoring and management
+- [ ] Multi-guild support
+- [ ] Webhook integrations (Slack, email notifications)
+- [ ] Usage analytics with cost alerts and budgets
+- [ ] Per-user permission mode overrides
+- [ ] Session tagging and search
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Whether it's a bug fix, a new feature, or improved docs — all PRs are appreciated.
@@ -354,21 +396,24 @@ Contributions are welcome! Whether it's a bug fix, a new feature, or improved do
 
 ### 💭 Ideas for contribution
 
-- 🔔 Webhook / notification integrations
-- 💾 Persistent session storage (database-backed)
-- 🖥️ Web dashboard for session monitoring
-- 🌐 Multi-server support
 - 🐳 Docker deployment setup
+- 🖥️ Web dashboard for session monitoring
+- 🌐 Multi-server (multi-guild) support
+- 🔔 Webhook / notification integrations (Slack, email)
+- 💾 Persistent queue storage (survive restart)
 - 🌍 Localization / i18n support
+- 📈 Usage analytics and cost alerts
+- 🔐 Per-user permission mode overrides
 
 ---
 
 ## ⚠️ Known Limitations
 
 - 🏠 Runs locally — the host machine must stay on with the terminal open
-- 📺 Single-channel operation with user whitelist
-- 💾 In-memory session state (lost on restart; daily summary data is persisted to file)
+- 📺 Single-guild operation with user whitelist (channel-per-repo routing within the guild)
+- 💾 In-memory session state (active sessions are persisted for crash recovery; daily summary data is persisted to file)
 - 🔑 Requires Claude Code CLI to be authenticated
+- 📋 Queued sessions are in-memory only — lost on restart (active/running sessions are recoverable)
 
 ---
 
