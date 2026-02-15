@@ -161,10 +161,11 @@ async function main() {
           // Thread may no longer exist
         }
 
-        // Process queue: start next queued session for this project
+        // Process queue: start next valid queued session for this project
+        // Loop to skip entries that were cancelled via /stop while queued (#1)
         if (s) {
-          const nextEntry = queueStore.dequeue(s.cwd);
-          if (nextEntry) {
+          let nextEntry = queueStore.dequeue(s.cwd);
+          while (nextEntry) {
             const queuedSession = store.getSession(nextEntry.threadId);
             if (queuedSession && queuedSession.status === 'queued') {
               store.updateSession(nextEntry.threadId, {
@@ -189,11 +190,14 @@ async function main() {
               const updatedSession = store.getSession(nextEntry.threadId);
               if (updatedSession) {
                 startClaudeQuery(updatedSession, nextEntry.threadId).catch(async (error) => {
-                  claudeLog.error({ err: error, threadId: nextEntry.threadId }, 'Queued session error');
-                  store.clearSession(nextEntry.threadId);
+                  claudeLog.error({ err: error, threadId: nextEntry!.threadId }, 'Queued session error');
+                  store.clearSession(nextEntry!.threadId);
                 });
               }
+              break;
             }
+            // Entry was cancelled or invalid — try the next one
+            nextEntry = queueStore.dequeue(s.cwd);
           }
         }
       },
@@ -252,8 +256,9 @@ async function main() {
       } catch {
         // Thread may no longer exist
       }
+      // Clear per-session after notification attempt (even if thread is gone)
+      recoveryStore.remove(recSession.threadId);
     }
-    recoveryStore.clearAll();
   }
 
   // Clean up orphan Threads on startup (across all repo channels)

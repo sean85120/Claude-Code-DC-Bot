@@ -66,13 +66,14 @@ export async function execute(
         queueText += `  ... and ${entries.length - 3} more\n`;
       }
     }
-    if (embed.fields) {
-      embed.fields.push({
+    embed.fields = [
+      ...(embed.fields ?? []),
+      {
         name: `📋 Queue (${queueStore.getTotalQueuedCount()} total)`,
         value: queueText.trim().slice(0, 1024),
         inline: false,
-      });
-    }
+      },
+    ];
   }
 
   await editReply(interaction, { embeds });

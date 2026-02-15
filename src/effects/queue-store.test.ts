@@ -181,14 +181,14 @@ describe('QueueStore', () => {
       expect(store.isProjectBusy('/project', stateStore)).toBe(true);
     });
 
-    it('returns false when project has only waiting_input session', () => {
+    it('returns true when project has waiting_input session', () => {
       const stateStore = new StateStore();
       stateStore.setSession('thread-active', makeSession({
         cwd: '/project',
         status: 'waiting_input',
       }));
 
-      expect(store.isProjectBusy('/project', stateStore)).toBe(false);
+      expect(store.isProjectBusy('/project', stateStore)).toBe(true);
     });
 
     it('returns false when no sessions exist for project', () => {
@@ -204,6 +204,15 @@ describe('QueueStore', () => {
       }));
 
       expect(store.isProjectBusy('/project', stateStore)).toBe(false);
+    });
+  });
+
+  describe('getAllQueues', () => {
+    it('returns deep copy — mutations do not affect internal state', () => {
+      store.enqueue('/project', makeEntry({ threadId: 'thread-1' }));
+      const allQueues = store.getAllQueues();
+      allQueues.get('/project')!.pop();
+      expect(store.getQueue('/project')).toHaveLength(1);
     });
   });
 

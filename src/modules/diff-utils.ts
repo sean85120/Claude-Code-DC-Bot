@@ -197,6 +197,15 @@ export function generateUnifiedDiff(
   const oldLines = oldStr.split('\n');
   const newLines = newStr.split('\n');
 
+  // Guard against excessive memory usage for large files (O(m*n) LCS table).
+  // This is only for Discord embed preview, so a summary is fine for large diffs.
+  const MAX_DIFF_LINES = 500;
+  if (oldLines.length > MAX_DIFF_LINES || newLines.length > MAX_DIFF_LINES) {
+    const delta = newLines.length - oldLines.length;
+    const sign = delta >= 0 ? '+' : '';
+    return `--- a/${fileName}\n+++ b/${fileName}\n(diff too large: ${oldLines.length} → ${newLines.length} lines, ${sign}${delta})`;
+  }
+
   // For pure addition (empty old)
   if (!oldStr) {
     const addedLines = newLines.map((l) => `+${l}`).join('\n');

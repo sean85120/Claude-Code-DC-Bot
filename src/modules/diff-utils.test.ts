@@ -127,6 +127,27 @@ describe('generateUnifiedDiff', () => {
     expect(result).toContain(' line 12');
   });
 
+  it('returns summary fallback for large files (>500 lines)', () => {
+    const oldLines = Array.from({ length: 600 }, (_, i) => `old line ${i}`).join('\n');
+    const newLines = Array.from({ length: 650 }, (_, i) => `new line ${i}`).join('\n');
+    const result = generateUnifiedDiff(oldLines, newLines, 'big-file.ts');
+    expect(result).toContain('diff too large');
+    expect(result).toContain('600');
+    expect(result).toContain('650');
+    expect(result).toContain('+50');
+    expect(result).not.toContain('@@ '); // No hunk headers
+  });
+
+  it('processes files just under 500 lines normally', () => {
+    const lines = Array.from({ length: 499 }, (_, i) => `line ${i}`);
+    const newLines = [...lines];
+    newLines[250] = 'modified line';
+    const result = generateUnifiedDiff(lines.join('\n'), newLines.join('\n'), 'test.ts');
+    expect(result).toContain('-line 250');
+    expect(result).toContain('+modified line');
+    expect(result).toContain('@@ ');
+  });
+
   it('handles file with trailing newlines', () => {
     const old = 'line1\nline2\n';
     const newStr = 'line1\nline2\nline3\n';

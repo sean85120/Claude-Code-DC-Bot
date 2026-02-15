@@ -6,6 +6,7 @@ import {
   type TextChannel,
   type Client,
 } from 'discord.js';
+import { randomUUID } from 'node:crypto';
 import type { BotConfig, SessionState, Project, QueueEntry } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import type { RateLimitStore } from '../effects/rate-limit-store.js';
@@ -193,7 +194,7 @@ export async function execute(
     store.setSession(thread.id, session);
 
     const entry: QueueEntry = {
-      id: `q-${Date.now()}-${thread.id.slice(-4)}`,
+      id: randomUUID(),
       userId: interaction.user.id,
       promptText: message,
       cwd,

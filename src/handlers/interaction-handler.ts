@@ -23,6 +23,7 @@ import type { QueueStore } from '../effects/queue-store.js';
 import { sendInThread, sendTextInThread } from '../effects/discord-sender.js';
 import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
 import { truncate } from '../modules/formatters.js';
+import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
 import { logger } from '../effects/logger.js';
 
 const log = logger.child({ module: 'Interaction' });
@@ -167,6 +168,13 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
       if (customId.startsWith('recovery_retry:')) {
         const threadId = customId.slice('recovery_retry:'.length);
 
+        // Authorization check (#3)
+        const auth = canExecuteCommand(interaction.user.id, deps.config);
+        if (!auth.allowed) {
+          await interaction.reply({ content: `❌ ${auth.reason}`, flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
         // Verify thread exists and is a thread
         try {
           const channel = await deps.client.channels.fetch(threadId);
@@ -189,6 +197,13 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           const promptText = embed?.description || 'Retry interrupted session';
           const cwdField = embed?.fields?.find((f) => f.name === 'Working Directory');
           const cwd = cwdField?.value?.replace(/`/g, '') || deps.config.defaultCwd;
+
+          // Validate cwd against allowed project list (#2)
+          if (!isAllowedCwd(cwd, deps.config.projects)) {
+            await interaction.reply({ content: '❌ The working directory is no longer in the allowed project list.', flags: [MessageFlags.Ephemeral] });
+            return;
+          }
+
           const model = deps.config.defaultModel;
 
           // Create new session
@@ -240,9 +255,14 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
         return;
       }
 
-      // Recovery dismiss — acknowledge and do nothing
+      // Recovery dismiss — remove buttons and acknowledge
       if (customId.startsWith('recovery_dismiss:')) {
-        await interaction.reply({ content: '✅ Dismissed', flags: [MessageFlags.Ephemeral] });
+        try {
+          await interaction.update({ components: [] });
+        } catch {
+          // Message may have already been updated
+        }
+        await interaction.followUp({ content: '✅ Dismissed', flags: [MessageFlags.Ephemeral] });
         return;
       }
 

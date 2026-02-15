@@ -95,17 +95,19 @@ export class QueueStore {
   }
 
   /**
-   * Check if a project has any running session (not queued, not completed/error)
+   * Check if a project has any active session (running, awaiting_permission, or waiting_input).
+   * `waiting_input` is included because it represents a live session that can receive follow-ups,
+   * and running two Claude subprocesses on the same project directory concurrently could cause conflicts.
    * @param cwd - Project path
    * @param store - StateStore to check active sessions
-   * @returns true if any session for this cwd is in running/awaiting_permission state
+   * @returns true if any session for this cwd is in an active state
    */
   isProjectBusy(cwd: string, store: StateStore): boolean {
     const active = store.getAllActiveSessions();
     for (const session of active.values()) {
       if (
         session.cwd === cwd &&
-        (session.status === 'running' || session.status === 'awaiting_permission')
+        (session.status === 'running' || session.status === 'awaiting_permission' || session.status === 'waiting_input')
       ) {
         return true;
       }
@@ -118,7 +120,11 @@ export class QueueStore {
    * @returns Map of project path to queue entries
    */
   getAllQueues(): Map<string, QueueEntry[]> {
-    return new Map(this.queues);
+    const copy = new Map<string, QueueEntry[]>();
+    for (const [key, entries] of this.queues) {
+      copy.set(key, [...entries]);
+    }
+    return copy;
   }
 
   /**
