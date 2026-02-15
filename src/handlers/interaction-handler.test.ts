@@ -502,7 +502,7 @@ describe('createInteractionHandler', () => {
       const interaction = makeButtonInteraction('recovery_retry:t1');
       await handler(interaction as never);
       expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
-        expect.objectContaining({ content: expect.stringContaining('already running') }),
+        expect.objectContaining({ content: expect.stringContaining('already active') }),
       );
     });
   });

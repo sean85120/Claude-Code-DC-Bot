@@ -184,10 +184,10 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           }
           const thread = channel as ThreadChannel;
 
-          // Check no session already running in this thread
+          // Check no active session in this thread (running, awaiting_permission, or waiting_input)
           const existingSession = deps.store.getSession(threadId);
-          if (existingSession && existingSession.status === 'running') {
-            await interaction.reply({ content: '⚠️ A session is already running in this thread', flags: [MessageFlags.Ephemeral] });
+          if (existingSession && (existingSession.status === 'running' || existingSession.status === 'awaiting_permission' || existingSession.status === 'waiting_input')) {
+            await interaction.reply({ content: '⚠️ A session is already active in this thread', flags: [MessageFlags.Ephemeral] });
             return;
           }
 
@@ -201,6 +201,12 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           // Validate cwd against allowed project list (#2)
           if (!isAllowedCwd(cwd, deps.config.projects)) {
             await interaction.reply({ content: '❌ The working directory is no longer in the allowed project list.', flags: [MessageFlags.Ephemeral] });
+            return;
+          }
+
+          // Check if project is already busy (consistent with queue system concurrency rules)
+          if (deps.queueStore?.isProjectBusy(cwd, deps.store)) {
+            await interaction.reply({ content: '⚠️ Another session is currently active on this project. Please wait or use /stop first.', flags: [MessageFlags.Ephemeral] });
             return;
           }
 
