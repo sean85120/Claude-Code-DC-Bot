@@ -169,6 +169,7 @@ async function main() {
     startClaudeQuery,
     rateLimitStore,
     usageStore,
+    summaryStore,
   });
 
   // Create Thread message handler (for follow-up questions)

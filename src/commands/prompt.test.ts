@@ -53,7 +53,7 @@ function makeInteraction(overrides?: Record<string, unknown>) {
     options: {
       getString: vi.fn((name: string, _required?: boolean) => {
         if (name === 'message') return 'Fix bug';
-        if (name === 'cwd') return '/test';
+        if (name === 'repo') return '/test';
         if (name === 'model') return null;
         return null;
       }),
@@ -88,7 +88,7 @@ describe('prompt execute', () => {
       options: {
         getString: vi.fn((name: string) => {
           if (name === 'message') return 'Fix bug';
-          if (name === 'cwd') return '/not-allowed';
+          if (name === 'repo') return '/not-allowed';
           return null;
         }),
       },
@@ -153,7 +153,7 @@ describe('prompt execute', () => {
       options: {
         getString: vi.fn((name: string) => {
           if (name === 'message') return 'Fix bug';
-          if (name === 'cwd') return '/test';
+          if (name === 'repo') return '/test';
           if (name === 'model') return 'claude-haiku-4-5-20251001';
           return null;
         }),

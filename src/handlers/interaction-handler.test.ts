@@ -29,6 +29,9 @@ vi.mock('../commands/settings.js', () => ({
 vi.mock('../commands/repos.js', () => ({
   execute: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('../commands/summary.js', () => ({
+  execute: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('./ask-handler.js', () => ({
   handleAskOptionClick: vi.fn().mockResolvedValue(undefined),
   handleAskSubmit: vi.fn().mockResolvedValue(undefined),
@@ -41,6 +44,7 @@ import * as stopCmd from '../commands/stop.js';
 import * as statusCmd from '../commands/status.js';
 import * as historyCmd from '../commands/history.js';
 import * as retryCmd from '../commands/retry.js';
+import * as summaryCmd from '../commands/summary.js';
 import { handleAskOptionClick, handleAskSubmit, handleAskOther, handleAskModalSubmit } from './ask-handler.js';
 
 const mockConfig: BotConfig = {
@@ -60,6 +64,9 @@ const mockConfig: BotConfig = {
   botRepoPath: '/test',
   approvalTimeoutMs: 300000,
   sessionIdleTimeoutMs: 1800000,
+  summaryChannelName: 'claude-daily-summary',
+  summaryHourUtc: 0,
+  summaryEnabled: true,
 };
 
 function makeDeps(store?: StateStore) {
@@ -70,6 +77,7 @@ function makeDeps(store?: StateStore) {
     startClaudeQuery: vi.fn().mockResolvedValue(undefined),
     rateLimitStore: { getEntry: vi.fn(), setEntry: vi.fn() } as unknown as RateLimitStore,
     usageStore: new UsageStore(),
+    summaryStore: {} as never,
   };
 }
 
@@ -145,6 +153,13 @@ describe('createInteractionHandler', () => {
       const handler = createInteractionHandler(deps);
       await handler(makeSlashInteraction('retry') as never);
       expect(retryCmd.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes /summary', async () => {
+      const deps = makeDeps();
+      const handler = createInteractionHandler(deps);
+      await handler(makeSlashInteraction('summary') as never);
+      expect(summaryCmd.execute).toHaveBeenCalledTimes(1);
     });
 
     it('replies with error for unknown command', async () => {
