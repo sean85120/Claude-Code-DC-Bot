@@ -41,6 +41,10 @@ export function parseConfig(env: Record<string, string | undefined>): BotConfig 
       .slice(0, 100) || 'claude-daily-summary',
     summaryHourUtc: Math.min(23, Math.max(0, safeParseInt(env.SUMMARY_HOUR_UTC, 0))),
     summaryEnabled: env.SUMMARY_ENABLED !== 'false',
+    hideReadResults: env.HIDE_READ_RESULTS === 'true',
+    hideSearchResults: env.HIDE_SEARCH_RESULTS === 'true',
+    hideAllToolEmbeds: env.HIDE_ALL_TOOL_EMBEDS === 'true',
+    compactToolEmbeds: env.COMPACT_TOOL_EMBEDS === 'true',
   };
 }
 

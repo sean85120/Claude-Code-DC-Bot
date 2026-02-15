@@ -60,6 +60,7 @@ async function main() {
       cwd: session.cwd,
       streamUpdateIntervalMs: config.streamUpdateIntervalMs,
       usageStore,
+      config,
     });
 
     // Create permission handler

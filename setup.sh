@@ -96,24 +96,16 @@ check_prerequisites() {
     all_ok=false
   fi
 
-  # Package manager (pnpm preferred, npm as fallback)
+  # Package manager (npm)
   PKG_MGR=""
-  PKG_RUN=""
-  if command -v pnpm &> /dev/null; then
-    local pnpm_version
-    pnpm_version=$(pnpm --version)
-    printf "  ${GREEN}✓${NC} pnpm %s\n" "$pnpm_version"
-    PKG_MGR="pnpm"
-    PKG_RUN="pnpm"
-  elif command -v npm &> /dev/null; then
+  if command -v npm &> /dev/null; then
     local npm_version
     npm_version=$(npm --version)
-    printf "  ${YELLOW}△${NC} npm %s ${DIM}(pnpm recommended)${NC}\n" "$npm_version"
+    printf "  ${GREEN}✓${NC} npm %s\n" "$npm_version"
     PKG_MGR="npm"
-    PKG_RUN="npx"
   else
-    printf "  ${RED}✗${NC} No package manager found (pnpm or npm required)\n"
-    print_dim "    Install pnpm: npm install -g pnpm"
+    printf "  ${RED}✗${NC} npm not found\n"
+    print_dim "    Install Node.js (includes npm): https://nodejs.org"
     all_ok=false
   fi
 
@@ -325,25 +317,15 @@ deploy_slash_commands() {
     echo ""
 
     if [ -n "$PKG_MGR" ]; then
-      if [ "$PKG_MGR" = "pnpm" ]; then
-        if pnpm deploy-commands; then
-          echo ""
-          print_green "Slash commands deployed successfully!"
-        else
-          echo ""
-          print_red "Failed to deploy commands. You can retry later with: pnpm deploy-commands"
-        fi
+      if npm run deploy-commands; then
+        echo ""
+        print_green "Slash commands deployed successfully!"
       else
-        if npm run deploy-commands; then
-          echo ""
-          print_green "Slash commands deployed successfully!"
-        else
-          echo ""
-          print_red "Failed to deploy commands. You can retry later with: npm run deploy-commands"
-        fi
+        echo ""
+        print_red "Failed to deploy commands. You can retry later with: npm run deploy-commands"
       fi
     else
-      print_yellow "No package manager found. Run manually: pnpm deploy-commands"
+      print_yellow "No package manager found. Run manually: npm run deploy-commands"
     fi
   fi
 }
@@ -375,9 +357,9 @@ else
   echo ""
   echo "Next steps:"
   if [ -n "$PKG_MGR" ]; then
-    echo "  1. $PKG_MGR run dev               # Start the bot in dev mode"
+    echo "  1. npm run dev                     # Start the bot in dev mode"
   else
-    echo "  1. pnpm dev                        # Start the bot in dev mode"
+    echo "  1. npm run dev                     # Start the bot in dev mode"
   fi
 fi
 echo ""

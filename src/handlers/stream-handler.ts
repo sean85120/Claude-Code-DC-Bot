@@ -1,5 +1,7 @@
 import type { ThreadChannel, Message } from 'discord.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { BotConfig } from '../types.js';
+import { SEARCH_TOOLS } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import { logger } from '../effects/logger.js';
 
@@ -8,6 +10,7 @@ import type { UsageStore } from '../effects/usage-store.js';
 import { sendInThread, sendPlainInThread, editMessageText, sendTextInThread } from '../effects/discord-sender.js';
 import {
   buildToolUseEmbed,
+  buildCompactToolEmbed,
   buildResultEmbed,
   buildErrorEmbed,
 } from '../modules/embeds.js';
@@ -23,6 +26,8 @@ export interface StreamHandlerDeps {
   cwd: string;
   streamUpdateIntervalMs: number;
   usageStore: UsageStore;
+  /** Live config reference — changes via /settings propagate to running sessions */
+  config: BotConfig;
 }
 
 /**
@@ -206,11 +211,16 @@ export async function handleSDKMessage(
           });
         }
 
-        const embed = buildToolUseEmbed(
-          tool.toolName,
-          tool.toolInput as Record<string, unknown>,
-          cwd,
-        );
+        // Embed visibility precedence: hideAll > hideRead/hideSearch > compact > full
+        const cfg = deps.config;
+        if (cfg.hideAllToolEmbeds) continue;
+        if (cfg.hideReadResults && tool.toolName === 'Read') continue;
+        if (cfg.hideSearchResults && SEARCH_TOOLS.includes(tool.toolName)) continue;
+
+        const toolInput = tool.toolInput as Record<string, unknown>;
+        const embed = cfg.compactToolEmbeds
+          ? buildCompactToolEmbed(tool.toolName, toolInput, cwd)
+          : buildToolUseEmbed(tool.toolName, toolInput, cwd);
         await sendInThread(thread, embed);
       }
       break;
