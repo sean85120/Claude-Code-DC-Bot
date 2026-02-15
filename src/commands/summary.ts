@@ -15,6 +15,15 @@ import { logger } from '../effects/logger.js';
 
 const log = logger.child({ module: 'SummaryCmd' });
 
+/** Cooldown: track last post time per date to prevent spamming the summary channel */
+const lastPostTime = new Map<string, number>();
+const COOLDOWN_MS = 60_000; // 60 seconds
+
+/** Reset the cooldown map (for testing) */
+export function resetCooldown(): void {
+  lastPostTime.clear();
+}
+
 /** /summary command definition: post the daily summary and cost report to the summary channel */
 export const data = new SlashCommandBuilder()
   .setName('summary')
@@ -63,11 +72,20 @@ export async function execute(
       return;
     }
 
-    // Validate it's a real date
+    // Validate it's a real date (round-trip check catches rollover like 2025-02-31 → 2025-03-03)
     const parsed = new Date(dateInput + 'T00:00:00Z');
-    if (isNaN(parsed.getTime())) {
+    if (isNaN(parsed.getTime()) || parsed.toISOString().split('T')[0] !== dateInput) {
       await editReply(interaction, {
         content: '❌ Invalid date. Please use a valid YYYY-MM-DD date.',
+      });
+      return;
+    }
+
+    // Reject future dates
+    const today = new Date().toISOString().split('T')[0];
+    if (dateInput > today) {
+      await editReply(interaction, {
+        content: '❌ Cannot generate a summary for a future date.',
       });
       return;
     }
@@ -90,6 +108,16 @@ export async function execute(
     };
   }
 
+  // Cooldown: prevent posting the same date within 60 seconds
+  const lastPost = lastPostTime.get(targetDate);
+  if (lastPost && Date.now() - lastPost < COOLDOWN_MS) {
+    const remaining = Math.ceil((COOLDOWN_MS - (Date.now() - lastPost)) / 1000);
+    await editReply(interaction, {
+      content: `⏳ Summary for **${targetDate}** was just posted. Please wait ${remaining} seconds.`,
+    });
+    return;
+  }
+
   // Build the embed using existing pure functions
   const repoSummaries = groupSessionsByRepo(record.sessions);
   const embed = buildDailySummaryEmbed(record, repoSummaries);
@@ -98,6 +126,8 @@ export async function execute(
   try {
     const channel = await resolveSummaryChannel(client, config);
     await channel.send({ embeds: [embed] });
+
+    lastPostTime.set(targetDate, Date.now());
 
     await editReply(interaction, {
       content: `✅ Summary for **${targetDate}** posted to <#${channel.id}>`,

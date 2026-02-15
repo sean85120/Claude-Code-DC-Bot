@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
 import type { BotConfig } from '../types.js';
-import { execute } from './summary.js';
+import { execute, resetCooldown } from './summary.js';
 
 vi.mock('../effects/discord-sender.js', () => ({
   deferReplyEphemeral: vi.fn().mockResolvedValue(undefined),
@@ -82,6 +82,7 @@ const mockClient = {} as never;
 describe('summary execute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetCooldown();
     // Create a fresh send mock each time, then wire it into the resolved channel
     mockChannelSend = vi.fn().mockResolvedValue(undefined);
     vi.mocked(resolveSummaryChannel).mockResolvedValue({
@@ -162,6 +163,54 @@ describe('summary execute', () => {
     expect(groupSessionsByRepo).toHaveBeenCalledWith([]);
     expect(buildDailySummaryEmbed).toHaveBeenCalled();
     expect(mockChannelSend).toHaveBeenCalled();
+  });
+
+  it('replies with error for impossible date like 2025-02-31', async () => {
+    const store = makeSummaryStore();
+    const interaction = makeInteraction('2025-02-31');
+    await execute(interaction as never, mockConfig, store as never, mockClient);
+
+    expect(editReply).toHaveBeenCalledWith(
+      interaction,
+      expect.objectContaining({
+        content: expect.stringContaining('Invalid date'),
+      }),
+    );
+    expect(mockChannelSend).not.toHaveBeenCalled();
+  });
+
+  it('replies with error for future date', async () => {
+    const store = makeSummaryStore();
+    const interaction = makeInteraction('2099-01-01');
+    await execute(interaction as never, mockConfig, store as never, mockClient);
+
+    expect(editReply).toHaveBeenCalledWith(
+      interaction,
+      expect.objectContaining({
+        content: expect.stringContaining('future date'),
+      }),
+    );
+    expect(mockChannelSend).not.toHaveBeenCalled();
+  });
+
+  it('enforces cooldown when posting same date twice', async () => {
+    const store = makeSummaryStore();
+
+    // First post should succeed
+    const interaction1 = makeInteraction(null);
+    await execute(interaction1 as never, mockConfig, store as never, mockClient);
+    expect(mockChannelSend).toHaveBeenCalledTimes(1);
+
+    // Second post for same date should be blocked by cooldown
+    const interaction2 = makeInteraction(null);
+    await execute(interaction2 as never, mockConfig, store as never, mockClient);
+    expect(mockChannelSend).toHaveBeenCalledTimes(1); // still 1
+    expect(editReply).toHaveBeenLastCalledWith(
+      interaction2,
+      expect.objectContaining({
+        content: expect.stringContaining('was just posted'),
+      }),
+    );
   });
 
   it('replies with failure when channel post fails', async () => {
