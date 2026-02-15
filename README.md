@@ -31,6 +31,10 @@ Claude Code is powerful but terminal-bound. This bot breaks that limit — you c
 - 📊 **Token tracking** — Cumulative token usage and cost via `/status`
 - 🚦 **Rate limiting** — Configurable per-user request throttling
 - 📅 **Daily summaries** — Automatic daily reports of completed work, token usage, and costs per repository, posted to a dedicated channel
+- 💰 **Cost budgets** — Daily/weekly/monthly spending limits with automatic warnings and session blocking via `/budget`
+- 📋 **Prompt templates** — Save and reuse frequent prompts via `/template save|list|run|delete`
+- 📊 **Git integration** — Automatic git diff summary posted after each session completion
+- ⏰ **Scheduled prompts** — Run prompts at specific times (daily, weekly, once) via `/schedule`
 - 📋 **Per-project session queue** — When a project is busy, new prompts are automatically queued and started in order when the current session completes
 - 🔄 **Session recovery** — Active sessions are persisted to disk; after a bot restart, users are notified with Retry/Dismiss buttons to re-run interrupted work
 - 📝 **Unified diff display** — Edit tool embeds show a unified diff preview of changes instead of raw input
@@ -132,6 +136,17 @@ npm run dev               # 🟢 Start the bot
 | `/repos list` | 📂 List registered project directories |
 | `/repos add` | ➕ Add a project (updates `/prompt` dropdown immediately) |
 | `/repos remove` | ➖ Remove a project |
+| `/budget view` | 💰 View current spending vs budget limits |
+| `/budget set` | 💰 Set a daily/weekly/monthly budget limit in USD |
+| `/budget clear` | 💰 Remove a budget limit |
+| `/template save` | 📋 Save a prompt as a reusable template |
+| `/template list` | 📋 List all saved templates |
+| `/template run` | 📋 Execute a saved template (creates thread + session) |
+| `/template delete` | 📋 Remove a template |
+| `/schedule add` | ⏰ Add a scheduled prompt (daily/weekly/once) |
+| `/schedule list` | ⏰ List all scheduled prompts |
+| `/schedule remove` | ⏰ Remove a scheduled prompt |
+| `/schedule toggle` | ⏰ Enable or disable a schedule |
 
 ### `/prompt` parameters
 
@@ -165,6 +180,10 @@ npm run dev               # 🟢 Start the bot
 | `SUMMARY_ENABLED` | Enable daily summary posting | `true` |
 | `SUMMARY_CHANNEL_NAME` | Channel name for daily summaries (auto-created) | `claude-daily-summary` |
 | `SUMMARY_HOUR_UTC` | Hour (UTC, 0-23) to post daily summary | `0` |
+| `BUDGET_DAILY_LIMIT_USD` | Daily spending limit in USD (0 = unlimited) | `0` |
+| `BUDGET_WEEKLY_LIMIT_USD` | Weekly spending limit in USD (0 = unlimited) | `0` |
+| `BUDGET_MONTHLY_LIMIT_USD` | Monthly spending limit in USD (0 = unlimited) | `0` |
+| `SHOW_GIT_SUMMARY` | Show git diff summary after session completion | `true` |
 | `HIDE_READ_RESULTS` | Hide Read tool embed cards in threads | `false` |
 | `HIDE_SEARCH_RESULTS` | Hide Glob/Grep tool embed cards in threads | `false` |
 | `HIDE_ALL_TOOL_EMBEDS` | Hide all tool embed cards (overrides individual settings) | `false` |
@@ -202,14 +221,75 @@ The summary channel is auto-created in the same category as the general channel.
 
 ---
 
+## 💰 Cost Budget System
+
+Set daily, weekly, and monthly spending limits to prevent unexpected costs. When a limit is reached, new `/prompt` sessions are blocked with an ephemeral warning. After each session, the bot posts a warning in the thread if any budget exceeds 80%.
+
+- **`/budget view`** — Shows spending vs limits with visual progress bars
+- **`/budget set daily 5.00`** — Set a $5 daily limit
+- **`/budget clear weekly`** — Remove the weekly limit
+
+Budget data is derived from the daily summary store — no additional persistence needed. Scheduled prompts also check budgets before running to prevent unattended cost overruns.
+
+---
+
+## 📋 Session Templates
+
+Save frequently used prompts as templates and run them with a single command. Templates store the prompt text, working directory, and optional model override.
+
+- **`/template save`** — Save a template with name, prompt, cwd, and optional model
+- **`/template list`** — View all saved templates with details
+- **`/template run`** — Execute a template (creates a thread and starts a session)
+- **`/template delete`** — Remove a template
+
+Templates are persisted to `templates.json` and survive bot restarts.
+
+---
+
+## 📊 Git Integration
+
+After each session completes, the bot automatically posts a git diff summary showing uncommitted changes in the project directory. This helps you see what Claude changed at a glance.
+
+```
+📊 Git Changes — 3 files changed, +45 -12
+  src/index.ts   | +20 -5
+  src/config.ts  | +15 -3
+  src/types.ts   | +10 -4
+```
+
+Disable with `SHOW_GIT_SUMMARY=false` or via `/settings update`.
+
+---
+
+## ⏰ Scheduled Prompts
+
+Run prompts automatically at specific times without manual intervention. Useful for recurring tasks like daily test runs, code reviews, or status checks.
+
+- **`/schedule add`** — Create a schedule (daily, weekly, or one-time)
+- **`/schedule list`** — View all schedules with next run times
+- **`/schedule toggle`** — Enable or disable a schedule
+- **`/schedule remove`** — Delete a schedule
+
+### Schedule types
+
+| Type | Example | Description |
+| --- | --- | --- |
+| `daily` | `09:00` | Runs every day at 09:00 UTC |
+| `weekly` | `Mon 09:00` | Runs every Monday at 09:00 UTC |
+| `once` | `2026-03-01 09:00` | Runs once on the specified date |
+
+The runner checks every 60 seconds for due schedules, creates a thread, and starts a Claude session. Budget limits are checked before each run. One-time schedules are automatically disabled after execution. Schedules are persisted to `schedules.json`.
+
+---
+
 ## 🏗️ Architecture
 
 ```
 src/
-├── commands/    # 📋 Slash command definitions (prompt, stop, status, history, retry, settings, repos)
-├── handlers/    # 🔀 Orchestration (interaction routing, streaming, permissions, follow-ups, summary scheduler)
-├── modules/     # 🧩 Pure functions (embeds, formatting, permissions, tool display, daily summary)
-├── effects/     # ⚡ Side effects (Discord I/O, Claude SDK bridge, state/usage/daily-summary stores, logger)
+├── commands/    # 📋 Slash command definitions (prompt, stop, status, history, retry, settings, repos, budget, template, schedule)
+├── handlers/    # 🔀 Orchestration (interaction routing, streaming, permissions, follow-ups, summary/schedule runners)
+├── modules/     # 🧩 Pure functions (embeds, formatting, permissions, tool display, daily summary, git utils)
+├── effects/     # ⚡ Side effects (Discord I/O, Claude SDK bridge, state/usage/budget/template/schedule stores, logger)
 ├── config.ts    # ⚙️ Environment variable parsing and validation
 ├── types.ts     # 📝 Shared type definitions and constants
 └── index.ts     # 🚪 Entry point

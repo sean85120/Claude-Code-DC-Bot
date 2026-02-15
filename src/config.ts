@@ -45,6 +45,10 @@ export function parseConfig(env: Record<string, string | undefined>): BotConfig 
     hideSearchResults: env.HIDE_SEARCH_RESULTS === 'true',
     hideAllToolEmbeds: env.HIDE_ALL_TOOL_EMBEDS === 'true',
     compactToolEmbeds: env.COMPACT_TOOL_EMBEDS === 'true',
+    budgetDailyLimitUsd: safeParseFloat(env.BUDGET_DAILY_LIMIT_USD, 0),
+    budgetWeeklyLimitUsd: safeParseFloat(env.BUDGET_WEEKLY_LIMIT_USD, 0),
+    budgetMonthlyLimitUsd: safeParseFloat(env.BUDGET_MONTHLY_LIMIT_USD, 0),
+    showGitSummary: env.SHOW_GIT_SUMMARY !== 'false',
   };
 }
 
@@ -90,6 +94,12 @@ function safeParseInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = parseInt(value, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function safeParseFloat(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = parseFloat(value);
+  return Number.isNaN(parsed) || parsed < 0 ? fallback : parsed;
 }
 
 function parsePermissionMode(value: string | undefined): PermissionMode {

@@ -8,6 +8,9 @@ import { data as retryData } from '../commands/retry.js';
 import { buildSettingsCommand } from '../commands/settings.js';
 import { buildReposCommand } from '../commands/repos.js';
 import { data as summaryData } from '../commands/summary.js';
+import { buildBudgetCommand } from '../commands/budget.js';
+import { buildTemplateCommand } from '../commands/template.js';
+import { buildScheduleCommand } from '../commands/schedule.js';
 import { logger } from './logger.js';
 
 const log = logger.child({ module: 'Deploy' });
@@ -27,6 +30,9 @@ export function buildCommandArray(projects: Project[]) {
     buildSettingsCommand().toJSON(),
     buildReposCommand(projects).toJSON(),
     summaryData.toJSON(),
+    buildBudgetCommand().toJSON(),
+    buildTemplateCommand(projects).toJSON(),
+    buildScheduleCommand(projects).toJSON(),
   ];
 }
 
