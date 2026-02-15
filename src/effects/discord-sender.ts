@@ -175,6 +175,40 @@ export function buildAnswerModal(threadId: string, questionText: string, qIdx = 
 }
 
 /**
+ * Send an Embed with a single "Retry" button for session recovery after bot restart
+ *
+ * @param channel - The target Thread
+ * @param embed - The recovery Embed object
+ * @param threadId - The corresponding Thread ID, used for button customId binding
+ * @returns The sent Discord message
+ */
+export async function sendEmbedWithRecoveryButton(
+  channel: ThreadChannel,
+  embed: APIEmbed,
+  threadId: string,
+): Promise<Message> {
+  if (channel.archived) await channel.setArchived(false);
+
+  const retryBtn = new ButtonBuilder()
+    .setCustomId(`recovery_retry:${threadId}`)
+    .setLabel('Retry')
+    .setStyle(ButtonStyle.Primary)
+    .setEmoji('🔄');
+
+  const dismissBtn = new ButtonBuilder()
+    .setCustomId(`recovery_dismiss:${threadId}`)
+    .setLabel('Dismiss')
+    .setStyle(ButtonStyle.Secondary);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(retryBtn, dismissBtn);
+
+  return channel.send({
+    embeds: [embed],
+    components: [row],
+  });
+}
+
+/**
  * Update a message's Embed and remove all buttons
  *
  * @param message - The Discord message to update

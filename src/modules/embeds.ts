@@ -736,6 +736,71 @@ export function buildOrphanCleanupEmbed(): APIEmbed {
   };
 }
 
+// ─── Queue Embeds ───────────────────────────────────
+
+/**
+ * Build a queued session notification embed
+ * @param position - 1-based queue position
+ * @param promptText - The prompt text
+ * @param cwd - Working directory
+ * @returns Queued notification embed
+ */
+export function buildQueuedEmbed(position: number, promptText: string, cwd: string): APIEmbed {
+  return {
+    color: COLORS.Info,
+    author: { name: '📋 Queued' },
+    title: `Position #${position} in queue`,
+    description: truncate(promptText, 3900),
+    fields: [
+      { name: 'Working Directory', value: `\`${cwd}\``, inline: true },
+      { name: 'Status', value: 'Waiting for the current session to complete', inline: false },
+    ],
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Build a notification embed when a queued session starts executing
+ * @param promptText - The prompt text
+ * @returns Queue start notification embed
+ */
+export function buildQueueStartEmbed(promptText: string): APIEmbed {
+  return {
+    color: COLORS.SessionStart,
+    author: { name: '🚀 Queue → Running' },
+    title: 'Your queued task is now starting',
+    description: truncate(promptText, 3900),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ─── Session Recovery Embed ─────────────────────────
+
+/**
+ * Build a recovery notification embed for sessions interrupted by bot restart
+ * @param promptText - The original prompt text
+ * @param cwd - Working directory
+ * @param startedAt - ISO 8601 string of when session started
+ * @returns Recovery notification embed
+ */
+export function buildRecoveryEmbed(promptText: string, cwd: string, startedAt: string): APIEmbed {
+  const started = new Date(startedAt);
+  const elapsed = Date.now() - started.getTime();
+
+  return {
+    color: COLORS.Notification,
+    author: { name: '🔄 Session Interrupted' },
+    title: 'Bot restarted — session was interrupted',
+    description: truncate(promptText, 3900),
+    fields: [
+      { name: 'Working Directory', value: `\`${cwd}\``, inline: true },
+      { name: 'Originally Started', value: `<t:${Math.floor(started.getTime() / 1000)}:R>`, inline: true },
+      { name: 'Action', value: 'Click the **Retry** button below to re-run this prompt.', inline: false },
+    ],
+    timestamp: new Date().toISOString(),
+  };
+}
+
 // ─── Helpers ───────────────────────────────────────
 
 function buildFooterText(

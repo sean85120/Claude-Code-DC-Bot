@@ -6,14 +6,15 @@ import {
   type TextChannel,
   type Client,
 } from 'discord.js';
-import type { BotConfig, SessionState, Project } from '../types.js';
+import type { BotConfig, SessionState, Project, QueueEntry } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import type { RateLimitStore } from '../effects/rate-limit-store.js';
+import type { QueueStore } from '../effects/queue-store.js';
 import { logger } from '../effects/logger.js';
 import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
 
 const log = logger.child({ module: 'Claude' });
-import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
+import { buildSessionStartEmbed, buildErrorEmbed, buildQueuedEmbed } from '../modules/embeds.js';
 import { truncate } from '../modules/formatters.js';
 import { checkRateLimit, recordRequest } from '../modules/rate-limiter.js';
 import {
@@ -64,6 +65,7 @@ export function buildPromptCommand(projects: Project[]) {
  * @param startClaudeQuery - Callback function to start a Claude query
  * @param rateLimitStore - Rate limit store (optional)
  * @param client - Discord client (optional, enables channel-per-repo routing)
+ * @param queueStore - Queue store (optional, enables per-project queuing)
  * @returns void
  */
 export async function execute(
@@ -73,6 +75,7 @@ export async function execute(
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>,
   rateLimitStore?: RateLimitStore,
   client?: Client,
+  queueStore?: QueueStore,
 ): Promise<void> {
   const auth = canExecuteCommand(interaction.user.id, config);
   if (!auth.allowed) {
@@ -177,14 +180,45 @@ export async function execute(
     transcript: [],
   };
 
-  store.setSession(thread.id, session);
-
   // Record initial user message to transcript
   session.transcript.push({
     timestamp: new Date(),
     type: 'user',
     content: message.slice(0, 2000),
   });
+
+  // Check if project is busy — if so, enqueue instead of starting immediately
+  if (queueStore && queueStore.isProjectBusy(cwd, store)) {
+    session.status = 'queued';
+    store.setSession(thread.id, session);
+
+    const entry: QueueEntry = {
+      id: `q-${Date.now()}-${thread.id.slice(-4)}`,
+      userId: interaction.user.id,
+      promptText: message,
+      cwd,
+      model,
+      threadId: thread.id,
+      queuedAt: new Date(),
+    };
+    const position = queueStore.enqueue(cwd, entry);
+
+    log.info({ threadId: thread.id, position, cwd, prompt: truncate(message, 40) }, 'Session queued');
+
+    const queueEmbed = buildQueuedEmbed(position, message, cwd);
+    await sendInThread(thread, queueEmbed);
+
+    await editReply(interaction, {
+      content: channelCreated
+        ? `📋 Queued at position #${position} in <#${targetChannel.id}> → <#${thread.id}>`
+        : `📋 Queued at position #${position} → <#${thread.id}>`,
+    });
+    return;
+  }
+
+  // Not queued — start immediately
+  session.status = 'running';
+  store.setSession(thread.id, session);
 
   // Send start embed to thread
   const startEmbed = buildSessionStartEmbed(message, cwd, model);

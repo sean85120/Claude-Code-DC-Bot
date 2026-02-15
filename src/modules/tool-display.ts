@@ -1,4 +1,5 @@
 import { truncate, getRelativePath, formatNumber } from './formatters.js';
+import { generateUnifiedDiff, truncateDiff, diffSummary } from './diff-utils.js';
 import type { ToolDisplayInfo } from '../types.js';
 
 /**
@@ -71,11 +72,17 @@ function formatWrite(input: Record<string, unknown>, cwd: string): ToolDisplayIn
   if (content) {
     const lines = content.split('\n').length;
     const chars = content.length;
+    const preview = truncate(content, 300);
     result.fields = [
       {
         name: 'Content Size',
         value: `${lines} lines / ${formatNumber(chars)} characters`,
         inline: true,
+      },
+      {
+        name: '📄 Preview',
+        value: `\`\`\`\n${preview}\n\`\`\``,
+        inline: false,
       },
     ];
   }
@@ -92,16 +99,32 @@ function formatEdit(input: Record<string, unknown>, cwd: string): ToolDisplayInf
     description: `\`\`\`\n${relativePath}\n\`\`\``,
   };
 
-  if (oldString && newString) {
+  if (oldString !== undefined && newString !== undefined) {
+    const diff = generateUnifiedDiff(oldString, newString, relativePath, 3);
+    if (diff) {
+      const truncated = truncateDiff(diff, 900);
+      // Strip the header lines (--- and +++) since the file path is already in the description
+      const headerless = truncated.split('\n').filter((l) => !l.startsWith('--- ') && !l.startsWith('+++ ')).join('\n');
+
+      result.fields = [
+        {
+          name: '📝 Changes',
+          value: `\`\`\`diff\n${headerless}\n\`\`\``,
+          inline: false,
+        },
+        {
+          name: '📊 Summary',
+          value: diffSummary(oldString, newString),
+          inline: true,
+        },
+      ];
+    }
+  } else if (newString) {
+    // New content only (old_string is empty/undefined)
     result.fields = [
       {
-        name: '🔴 Remove',
-        value: `\`\`\`diff\n- ${truncate(oldString.replace(/\n/g, '\n- '), 400)}\n\`\`\``,
-        inline: false,
-      },
-      {
-        name: '🟢 Add',
-        value: `\`\`\`diff\n+ ${truncate(newString.replace(/\n/g, '\n+ '), 400)}\n\`\`\``,
+        name: '🟢 New Content',
+        value: `\`\`\`\n${truncate(newString, 900)}\n\`\`\``,
         inline: false,
       },
     ];

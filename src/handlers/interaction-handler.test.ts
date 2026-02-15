@@ -294,7 +294,7 @@ describe('createInteractionHandler', () => {
       expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
         expect.objectContaining({ content: '🛑 Task has been stopped' }),
       );
-      expect(stopCmd.executeStop).toHaveBeenCalledWith('t1', store, deps.client);
+      expect(stopCmd.executeStop).toHaveBeenCalledWith('t1', store, deps.client, deps.queueStore);
     });
 
     it('confirm_stop replies ended when no session', async () => {
