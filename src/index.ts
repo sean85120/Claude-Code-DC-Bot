@@ -60,10 +60,7 @@ async function main() {
       cwd: session.cwd,
       streamUpdateIntervalMs: config.streamUpdateIntervalMs,
       usageStore,
-      hideReadResults: config.hideReadResults,
-      hideSearchResults: config.hideSearchResults,
-      hideAllToolEmbeds: config.hideAllToolEmbeds,
-      compactToolEmbeds: config.compactToolEmbeds,
+      config,
     });
 
     // Create permission handler

@@ -233,7 +233,8 @@ function updateEnvFile(key: string, value: string): void {
     content = '';
   }
 
-  const regex = new RegExp(`^${key}=.*$`, 'm');
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`^${escaped}=.*$`, 'm');
   if (regex.test(content)) {
     content = content.replace(regex, `${key}=${value}`);
   } else {

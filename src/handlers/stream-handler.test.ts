@@ -3,6 +3,7 @@ import type { ThreadChannel, Message } from 'discord.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { StateStore } from '../effects/state-store.js';
 import { UsageStore } from '../effects/usage-store.js';
+import type { BotConfig } from '../types.js';
 import { handleSDKMessage } from './stream-handler.js';
 import type { StreamHandlerDeps } from './stream-handler.js';
 
@@ -35,7 +36,17 @@ function makeSession(threadId: string, store: StateStore) {
   });
 }
 
-function makeDeps(store: StateStore, usageStore: UsageStore): StreamHandlerDeps {
+function makeConfig(overrides?: Partial<BotConfig>): BotConfig {
+  return {
+    hideReadResults: false,
+    hideSearchResults: false,
+    hideAllToolEmbeds: false,
+    compactToolEmbeds: false,
+    ...overrides,
+  } as BotConfig;
+}
+
+function makeDeps(store: StateStore, usageStore: UsageStore, configOverrides?: Partial<BotConfig>): StreamHandlerDeps {
   return {
     store,
     threadId: 't1',
@@ -43,10 +54,7 @@ function makeDeps(store: StateStore, usageStore: UsageStore): StreamHandlerDeps 
     cwd: '/test',
     streamUpdateIntervalMs: 2000,
     usageStore,
-    hideReadResults: false,
-    hideSearchResults: false,
-    hideAllToolEmbeds: false,
-    compactToolEmbeds: false,
+    config: makeConfig(configOverrides),
   };
 }
 
@@ -286,8 +294,7 @@ describe('handleSDKMessage', () => {
 
   describe('hideReadResults', () => {
     it('skips Read tool embed when hideReadResults is true', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.hideReadResults = true;
+      const deps = makeDeps(store, usageStore, { hideReadResults: true });
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -313,7 +320,6 @@ describe('handleSDKMessage', () => {
 
     it('sends Read tool embed when hideReadResults is false', async () => {
       const deps = makeDeps(store, usageStore);
-      deps.hideReadResults = false;
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -333,8 +339,7 @@ describe('handleSDKMessage', () => {
     });
 
     it('still sends non-Read tool embeds when hideReadResults is true', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.hideReadResults = true;
+      const deps = makeDeps(store, usageStore, { hideReadResults: true });
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -356,8 +361,7 @@ describe('handleSDKMessage', () => {
 
   describe('hideSearchResults', () => {
     it('skips Glob embed when hideSearchResults is true', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.hideSearchResults = true;
+      const deps = makeDeps(store, usageStore, { hideSearchResults: true });
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -379,8 +383,7 @@ describe('handleSDKMessage', () => {
     });
 
     it('skips Grep embed when hideSearchResults is true', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.hideSearchResults = true;
+      const deps = makeDeps(store, usageStore, { hideSearchResults: true });
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -400,8 +403,7 @@ describe('handleSDKMessage', () => {
     });
 
     it('still sends non-search embeds when hideSearchResults is true', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.hideSearchResults = true;
+      const deps = makeDeps(store, usageStore, { hideSearchResults: true });
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -423,8 +425,7 @@ describe('handleSDKMessage', () => {
 
   describe('hideAllToolEmbeds', () => {
     it('skips all tool embeds when hideAllToolEmbeds is true', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.hideAllToolEmbeds = true;
+      const deps = makeDeps(store, usageStore, { hideAllToolEmbeds: true });
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -448,8 +449,7 @@ describe('handleSDKMessage', () => {
     });
 
     it('still records transcript when hideAllToolEmbeds is true', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.hideAllToolEmbeds = true;
+      const deps = makeDeps(store, usageStore, { hideAllToolEmbeds: true });
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -473,8 +473,7 @@ describe('handleSDKMessage', () => {
 
   describe('compactToolEmbeds', () => {
     it('sends compact embed when compactToolEmbeds is true', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.compactToolEmbeds = true;
+      const deps = makeDeps(store, usageStore, { compactToolEmbeds: true });
       const state = makeStreamState();
 
       await handleSDKMessage(
@@ -500,9 +499,7 @@ describe('handleSDKMessage', () => {
     });
 
     it('hideAllToolEmbeds takes precedence over compactToolEmbeds', async () => {
-      const deps = makeDeps(store, usageStore);
-      deps.hideAllToolEmbeds = true;
-      deps.compactToolEmbeds = true;
+      const deps = makeDeps(store, usageStore, { hideAllToolEmbeds: true, compactToolEmbeds: true });
       const state = makeStreamState();
 
       await handleSDKMessage(

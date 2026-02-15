@@ -249,6 +249,9 @@ export const TOOL_EMOJI: Record<string, string> = {
   ExitPlanMode: '📋',
 };
 
+/** Tool names treated as "search" tools for HIDE_SEARCH_RESULTS */
+export const SEARCH_TOOLS: readonly string[] = ['Glob', 'Grep'];
+
 // ─── Permission Mode Display Names ──────────────────────────────
 
 /** Display name mapping for permission modes */

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildToolUseEmbed,
+  buildCompactToolEmbed,
   buildPermissionRequestEmbed,
   buildProgressEmbed,
   buildStreamingTextEmbed,
@@ -608,5 +609,33 @@ describe('buildGlobalStatusEmbed - per-user usage', () => {
   it('does not show per-user section when user usage is undefined', () => {
     const embed = buildGlobalStatusEmbed(makeGlobalStats(), new Map());
     expect(embed.fields?.some((f) => f.name.includes('Per-User Usage'))).toBe(false);
+  });
+});
+
+describe('buildCompactToolEmbed', () => {
+  it('returns a single-line embed with no author, title, or fields', () => {
+    const embed = buildCompactToolEmbed('Bash', { command: 'ls' }, '/test');
+    expect(embed.description).toContain('Bash');
+    expect(embed.description).toContain('Run Command');
+    expect(embed.color).toBe(COLORS.PreToolUse);
+    expect(embed.author).toBeUndefined();
+    expect(embed.title).toBeUndefined();
+    expect(embed.fields).toBeUndefined();
+  });
+
+  it('includes the tool emoji', () => {
+    const embed = buildCompactToolEmbed('Read', { file_path: '/test/a.ts' }, '/test');
+    expect(embed.description).toMatch(/📖/);
+  });
+
+  it('truncates long titles', () => {
+    const embed = buildCompactToolEmbed('Bash', { command: 'x'.repeat(500) }, '/test');
+    expect(embed.description!.length).toBeLessThan(200);
+  });
+
+  it('uses fallback emoji for unknown tools', () => {
+    const embed = buildCompactToolEmbed('UnknownTool', { foo: 'bar' }, '/test');
+    expect(embed.description).toMatch(/🔧/);
+    expect(embed.description).toContain('UnknownTool');
   });
 });
