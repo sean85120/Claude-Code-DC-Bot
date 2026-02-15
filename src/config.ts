@@ -99,7 +99,7 @@ function safeParseInt(value: string | undefined, fallback: number): number {
 function safeParseFloat(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = parseFloat(value);
-  return Number.isNaN(parsed) ? fallback : parsed;
+  return Number.isNaN(parsed) || parsed < 0 ? fallback : parsed;
 }
 
 function parsePermissionMode(value: string | undefined): PermissionMode {

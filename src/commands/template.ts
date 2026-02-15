@@ -6,9 +6,11 @@ import {
   type Client,
 } from 'discord.js';
 import type { BotConfig, SessionState, Project } from '../types.js';
+import { COLORS } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import type { TemplateStore } from '../effects/template-store.js';
 import type { QueueStore } from '../effects/queue-store.js';
+import type { BudgetStore } from '../effects/budget-store.js';
 import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
 import { truncate } from '../modules/formatters.js';
 import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
@@ -91,6 +93,7 @@ export async function execute(
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>,
   client?: Client,
   queueStore?: QueueStore,
+  budgetStore?: BudgetStore,
 ): Promise<void> {
   const auth = canExecuteCommand(interaction.user.id, config);
   if (!auth.allowed) {
@@ -108,7 +111,7 @@ export async function execute(
       await handleList(interaction, templateStore);
       break;
     case 'run':
-      await handleRun(interaction, config, store, templateStore, startClaudeQuery, client, queueStore);
+      await handleRun(interaction, config, store, templateStore, startClaudeQuery, client, queueStore, budgetStore);
       break;
     case 'delete':
       await handleDelete(interaction, templateStore);
@@ -121,7 +124,16 @@ async function handleSave(
   config: BotConfig,
   templateStore: TemplateStore,
 ): Promise<void> {
-  const name = interaction.options.getString('name', true);
+  const name = interaction.options.getString('name', true).trim();
+  if (name.length === 0 || name.length > 100) {
+    await interaction.reply({ content: '❌ Template name must be 1-100 characters', flags: [MessageFlags.Ephemeral] });
+    return;
+  }
+  if (/[@#<>]/.test(name)) {
+    await interaction.reply({ content: '❌ Template name cannot contain @, #, <, or >', flags: [MessageFlags.Ephemeral] });
+    return;
+  }
+
   const prompt = interaction.options.getString('prompt', true);
   const cwd = interaction.options.getString('cwd', true);
   const model = interaction.options.getString('model') || undefined;
@@ -148,7 +160,7 @@ async function handleSave(
         { name: 'Working Directory', value: `\`${cwd}\``, inline: true },
         ...(model ? [{ name: 'Model', value: model, inline: true }] : []),
       ],
-      color: 0x43b581,
+      color: COLORS.PostToolUse,
     }],
     flags: [MessageFlags.Ephemeral],
   });
@@ -176,7 +188,7 @@ async function handleList(
     embeds: [{
       title: `📋 Templates (${templates.length})`,
       description: lines.join('\n\n'),
-      color: 0x7289da,
+      color: COLORS.PreToolUse,
     }],
     flags: [MessageFlags.Ephemeral],
   });
@@ -189,7 +201,8 @@ async function handleRun(
   templateStore: TemplateStore,
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>,
   client?: Client,
-  queueStore?: QueueStore,
+  _queueStore?: QueueStore,
+  budgetStore?: BudgetStore,
 ): Promise<void> {
   const name = interaction.options.getString('name', true);
   const template = templateStore.get(name);
@@ -208,6 +221,18 @@ async function handleRun(
       flags: [MessageFlags.Ephemeral],
     });
     return;
+  }
+
+  // Budget check
+  if (budgetStore) {
+    const budgetResult = budgetStore.checkBudget(config);
+    if (budgetResult) {
+      await interaction.reply({
+        content: `🚫 **${budgetResult.period}** budget exceeded — $${budgetResult.spent.toFixed(2)} / $${budgetResult.limit.toFixed(2)}. Use \`/budget view\` for details.`,
+        flags: [MessageFlags.Ephemeral],
+      });
+      return;
+    }
   }
 
   await deferReply(interaction);
@@ -307,7 +332,7 @@ async function handleDelete(
     embeds: [{
       title: '🗑️ Template Deleted',
       description: `Template **${name}** has been removed`,
-      color: 0xe74c3c,
+      color: COLORS.Error,
     }],
     flags: [MessageFlags.Ephemeral],
   });

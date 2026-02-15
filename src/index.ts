@@ -31,7 +31,7 @@ import { startSummaryScheduler } from './handlers/summary-scheduler.js';
 import { startScheduleRunner } from './handlers/schedule-runner.js';
 import { buildRecoveryEmbed, buildGitSummaryEmbed, buildBudgetWarningEmbed } from './modules/embeds.js';
 import { sendEmbedWithRecoveryButton } from './effects/discord-sender.js';
-import { getGitDiffSummary } from './modules/git-utils.js';
+import { getGitDiffSummary } from './effects/git-bridge.js';
 
 // Load .env
 loadEnv();

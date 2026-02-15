@@ -1,6 +1,14 @@
 import type { BotConfig, BudgetCheckResult, BudgetWarning } from '../types.js';
 import type { DailySummaryStore } from './daily-summary-store.js';
 
+type BudgetPeriod = 'daily' | 'weekly' | 'monthly';
+
+interface PeriodCheck {
+  period: BudgetPeriod;
+  limit: number;
+  spent: number;
+}
+
 /**
  * Budget store that checks spending against configured limits.
  * Uses DailySummaryStore data — no separate persistence needed.
@@ -41,18 +49,21 @@ export class BudgetStore {
     return this.getSpendingForDays(30);
   }
 
+  /** Build the checks array (shared by checkBudget and getWarnings) */
+  private getChecks(config: BotConfig): PeriodCheck[] {
+    return [
+      { period: 'daily', limit: config.budgetDailyLimitUsd, spent: this.getDailySpend() },
+      { period: 'weekly', limit: config.budgetWeeklyLimitUsd, spent: this.getWeeklySpend() },
+      { period: 'monthly', limit: config.budgetMonthlyLimitUsd, spent: this.getMonthlySpend() },
+    ];
+  }
+
   /**
    * Check if any budget limit is exceeded.
    * Returns the first exceeded limit, or null if all within budget.
    */
   checkBudget(config: BotConfig): BudgetCheckResult | null {
-    const checks: Array<{ period: BudgetCheckResult['period']; limit: number; spent: number }> = [
-      { period: 'daily', limit: config.budgetDailyLimitUsd, spent: this.getDailySpend() },
-      { period: 'weekly', limit: config.budgetWeeklyLimitUsd, spent: this.getWeeklySpend() },
-      { period: 'monthly', limit: config.budgetMonthlyLimitUsd, spent: this.getMonthlySpend() },
-    ];
-
-    for (const check of checks) {
+    for (const check of this.getChecks(config)) {
       if (check.limit > 0 && check.spent >= check.limit) {
         return { exceeded: true, period: check.period, spent: check.spent, limit: check.limit };
       }
@@ -66,13 +77,7 @@ export class BudgetStore {
    */
   getWarnings(config: BotConfig): BudgetWarning[] {
     const warnings: BudgetWarning[] = [];
-    const checks: Array<{ period: BudgetWarning['period']; limit: number; spent: number }> = [
-      { period: 'daily', limit: config.budgetDailyLimitUsd, spent: this.getDailySpend() },
-      { period: 'weekly', limit: config.budgetWeeklyLimitUsd, spent: this.getWeeklySpend() },
-      { period: 'monthly', limit: config.budgetMonthlyLimitUsd, spent: this.getMonthlySpend() },
-    ];
-
-    for (const check of checks) {
+    for (const check of this.getChecks(config)) {
       if (check.limit > 0) {
         const pct = (check.spent / check.limit) * 100;
         if (pct >= 80) {
@@ -86,7 +91,7 @@ export class BudgetStore {
   /**
    * Set a budget limit at runtime (mutates config in-memory)
    */
-  setLimit(config: BotConfig, period: 'daily' | 'weekly' | 'monthly', amount: number): void {
+  setLimit(config: BotConfig, period: BudgetPeriod, amount: number): void {
     const key: keyof BotConfig =
       period === 'daily' ? 'budgetDailyLimitUsd'
       : period === 'weekly' ? 'budgetWeeklyLimitUsd'

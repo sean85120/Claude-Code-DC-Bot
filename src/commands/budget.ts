@@ -4,6 +4,7 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import type { BotConfig } from '../types.js';
+import { COLORS } from '../types.js';
 import type { BudgetStore } from '../effects/budget-store.js';
 import { canExecuteCommand } from '../modules/permissions.js';
 import { formatCost } from '../modules/formatters.js';
@@ -126,7 +127,7 @@ async function handleView(
     embeds: [{
       title: '💰 Budget Overview',
       description: lines.join('\n'),
-      color: warnings.some((w) => w.percentage >= 100) ? 0xe74c3c : 0x7289da,
+      color: warnings.some((w) => w.percentage >= 100) ? COLORS.Error : COLORS.PreToolUse,
     }],
     flags: [MessageFlags.Ephemeral],
   });
@@ -146,7 +147,7 @@ async function handleSet(
     embeds: [{
       title: '💰 Budget Updated',
       description: `**${period}** limit set to **${formatCost(amount)}**`,
-      color: 0x43b581,
+      color: COLORS.PostToolUse,
     }],
     flags: [MessageFlags.Ephemeral],
   });
@@ -165,7 +166,7 @@ async function handleClear(
     embeds: [{
       title: '💰 Budget Cleared',
       description: `**${period}** limit removed (unlimited)`,
-      color: 0x43b581,
+      color: COLORS.PostToolUse,
     }],
     flags: [MessageFlags.Ephemeral],
   });

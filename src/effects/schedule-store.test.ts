@@ -72,6 +72,18 @@ describe('ScheduleStore', () => {
     expect(store.toggle('nope')).toBeNull();
   });
 
+  it('setEnabled explicitly sets state', () => {
+    store.add(makeSchedule({ enabled: true }));
+    expect(store.setEnabled('daily-check', false)).toBe(false);
+    expect(store.getByName('daily-check')?.enabled).toBe(false);
+    expect(store.setEnabled('daily-check', false)).toBe(false); // idempotent
+    expect(store.getByName('daily-check')?.enabled).toBe(false);
+  });
+
+  it('setEnabled returns null for non-existent', () => {
+    expect(store.setEnabled('nope', true)).toBeNull();
+  });
+
   it('updates run times', () => {
     store.add(makeSchedule());
     const now = new Date().toISOString();
@@ -84,5 +96,30 @@ describe('ScheduleStore', () => {
     store.add(makeSchedule());
     const store2 = new ScheduleStore(tempDir);
     expect(store2.list().length).toBe(1);
+  });
+
+  describe('getDueSchedules', () => {
+    it('returns schedules with nextRunAt in the past', () => {
+      const pastDate = new Date(Date.now() - 60_000).toISOString();
+      store.add(makeSchedule({ nextRunAt: pastDate }));
+      expect(store.getDueSchedules().length).toBe(1);
+    });
+
+    it('does not return future schedules', () => {
+      const futureDate = new Date(Date.now() + 3_600_000).toISOString();
+      store.add(makeSchedule({ nextRunAt: futureDate }));
+      expect(store.getDueSchedules().length).toBe(0);
+    });
+
+    it('does not return disabled schedules', () => {
+      const pastDate = new Date(Date.now() - 60_000).toISOString();
+      store.add(makeSchedule({ enabled: false, nextRunAt: pastDate }));
+      expect(store.getDueSchedules().length).toBe(0);
+    });
+
+    it('does not return schedules without nextRunAt', () => {
+      store.add(makeSchedule());
+      expect(store.getDueSchedules().length).toBe(0);
+    });
   });
 });

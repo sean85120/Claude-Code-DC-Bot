@@ -29,19 +29,22 @@ export class ScheduleStore {
     }
   }
 
-  private saveToDisk(): void {
+  private saveToDisk(): boolean {
     try {
       writeFileSync(this.dataFilePath, JSON.stringify(this.schedules, null, 2), 'utf-8');
+      return true;
     } catch (error) {
       log.error({ err: error }, 'Failed to save schedules');
+      return false;
     }
   }
 
-  /** Add a new schedule */
-  add(schedule: ScheduledPrompt): void {
+  /** Add a new schedule. Returns false if persistence failed. */
+  add(schedule: ScheduledPrompt): boolean {
     this.schedules.push(schedule);
-    this.saveToDisk();
-    log.info({ id: schedule.id, name: schedule.name }, 'Schedule added');
+    const ok = this.saveToDisk();
+    if (ok) log.info({ id: schedule.id, name: schedule.name }, 'Schedule added');
+    return ok;
   }
 
   /** List all schedules */
@@ -64,9 +67,9 @@ export class ScheduleStore {
     const idx = this.schedules.findIndex((s) => s.name === name);
     if (idx < 0) return false;
     this.schedules.splice(idx, 1);
-    this.saveToDisk();
-    log.info({ name }, 'Schedule removed');
-    return true;
+    const ok = this.saveToDisk();
+    if (ok) log.info({ name }, 'Schedule removed');
+    return ok;
   }
 
   /** Toggle a schedule's enabled state. Returns the new state, or null if not found. */
@@ -79,6 +82,16 @@ export class ScheduleStore {
     return schedule.enabled;
   }
 
+  /** Explicitly set a schedule's enabled state. Returns null if not found. */
+  setEnabled(name: string, enabled: boolean): boolean | null {
+    const schedule = this.schedules.find((s) => s.name === name);
+    if (!schedule) return null;
+    schedule.enabled = enabled;
+    this.saveToDisk();
+    log.info({ name, enabled }, 'Schedule enabled state set');
+    return enabled;
+  }
+
   /** Update lastRunAt and nextRunAt for a schedule */
   updateRunTimes(id: string, lastRunAt: string, nextRunAt: string): void {
     const schedule = this.schedules.find((s) => s.id === id);
@@ -88,38 +101,13 @@ export class ScheduleStore {
     this.saveToDisk();
   }
 
-  /** Get all enabled schedules that are due to run */
+  /** Get all enabled schedules that are due to run (nextRunAt <= now) */
   getDueSchedules(): ScheduledPrompt[] {
     const now = new Date();
-    const nowUtcHour = now.getUTCHours();
-    const nowUtcMinute = now.getUTCMinutes();
-    const nowDay = now.getUTCDay();
-    const todayDateKey = now.toISOString().split('T')[0];
-    const currentHHMM = `${String(nowUtcHour).padStart(2, '0')}:${String(nowUtcMinute).padStart(2, '0')}`;
-
     return this.schedules.filter((s) => {
       if (!s.enabled) return false;
-
-      // Already ran today at this time?
-      if (s.lastRunAt) {
-        const lastRun = new Date(s.lastRunAt);
-        const lastRunDate = lastRun.toISOString().split('T')[0];
-        if (lastRunDate === todayDateKey) return false;
-      }
-
-      // Check if the time matches (within the current minute)
-      if (s.time !== currentHHMM) return false;
-
-      switch (s.scheduleType) {
-        case 'daily':
-          return true;
-        case 'weekly':
-          return s.dayOfWeek === nowDay;
-        case 'once':
-          return s.onceDate === todayDateKey;
-        default:
-          return false;
-      }
+      if (!s.nextRunAt) return false;
+      return new Date(s.nextRunAt) <= now;
     });
   }
 }

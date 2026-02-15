@@ -6,6 +6,7 @@ import type { BudgetStore } from '../effects/budget-store.js';
 import { buildSessionStartEmbed } from '../modules/embeds.js';
 import { sendInThread } from '../effects/discord-sender.js';
 import { truncate } from '../modules/formatters.js';
+import { isAllowedCwd } from '../modules/permissions.js';
 import { logger } from '../effects/logger.js';
 
 const log = logger.child({ module: 'ScheduleRunner' });
@@ -80,7 +81,24 @@ export function startScheduleRunner(deps: ScheduleRunnerDeps): { cancel: () => v
 async function runSchedule(schedule: ScheduledPrompt, deps: ScheduleRunnerDeps): Promise<void> {
   const { client, config, store, scheduleStore, budgetStore, startClaudeQuery } = deps;
 
+  // Check if a session is already active for this project
+  const activeSessions = store.getAllActiveSessions();
+  const projectBusy = Array.from(activeSessions.values()).some(
+    (s) => s.cwd === schedule.cwd && (s.status === 'running' || s.status === 'awaiting_permission'),
+  );
+  if (projectBusy) {
+    log.info({ schedule: schedule.name, cwd: schedule.cwd }, 'Project busy, skipping scheduled run');
+    return;
+  }
+
+  // Validate cwd is still in the allowed project list
+  if (!isAllowedCwd(schedule.cwd, config.projects)) {
+    log.warn({ schedule: schedule.name, cwd: schedule.cwd }, 'Scheduled prompt cwd no longer allowed, skipping');
+    return;
+  }
+
   // Budget check — prevent unattended cost overruns
+  // Note: This is a best-effort check. Concurrent sessions could collectively exceed the budget.
   const budgetResult = budgetStore.checkBudget(config);
   if (budgetResult) {
     log.warn(
@@ -140,7 +158,7 @@ async function runSchedule(schedule: ScheduledPrompt, deps: ScheduleRunnerDeps):
 
     // Disable one-time schedules after execution
     if (schedule.scheduleType === 'once') {
-      scheduleStore.toggle(schedule.name);
+      scheduleStore.setEnabled(schedule.name, false);
     }
 
     startClaudeQuery(session, thread.id).catch((error) => {

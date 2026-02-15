@@ -1,31 +1,41 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { GitDiffSummary } from '../types.js';
 
-const execFileAsync = promisify(execFile);
-
 /**
- * Get a summary of uncommitted git changes in the given directory.
- * Returns null if not a git repo or no changes.
+ * Parse `git diff --numstat` output into a GitDiffSummary.
+ * Each line: "insertions\tdeletions\tfilename"
  */
-export async function getGitDiffSummary(cwd: string): Promise<GitDiffSummary | null> {
-  try {
-    const { stdout } = await execFileAsync('git', ['diff', '--stat', 'HEAD'], {
-      cwd,
-      timeout: 10_000,
-    });
+export function parseGitNumstat(output: string): GitDiffSummary | null {
+  const lines = output.trim().split('\n').filter(Boolean);
+  if (lines.length === 0) return null;
 
-    if (!stdout.trim()) return null;
+  const files: GitDiffSummary['files'] = [];
+  let totalInsertions = 0;
+  let totalDeletions = 0;
 
-    return parseGitDiffStat(stdout);
-  } catch {
-    // Not a git repo or git not available
-    return null;
+  for (const line of lines) {
+    const match = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
+    if (match) {
+      const ins = match[1] === '-' ? 0 : parseInt(match[1], 10);
+      const del = match[2] === '-' ? 0 : parseInt(match[2], 10);
+      files.push({ path: match[3], insertions: ins, deletions: del });
+      totalInsertions += ins;
+      totalDeletions += del;
+    }
   }
+
+  if (files.length === 0) return null;
+
+  return {
+    filesChanged: files.length,
+    insertions: totalInsertions,
+    deletions: totalDeletions,
+    files,
+  };
 }
 
 /**
- * Parse `git diff --stat` output into a GitDiffSummary
+ * Parse `git diff --stat` output into a GitDiffSummary.
+ * Note: Per-file insertion/deletion counts are approximate (git truncates the bar chart).
  */
 export function parseGitDiffStat(output: string): GitDiffSummary | null {
   const lines = output.trim().split('\n');

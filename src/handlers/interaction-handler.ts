@@ -120,6 +120,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
               deps.startClaudeQuery,
               deps.client,
               deps.queueStore,
+              deps.budgetStore,
             );
           }
           break;

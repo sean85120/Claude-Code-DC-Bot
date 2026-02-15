@@ -5,6 +5,7 @@ import {
 } from 'discord.js';
 import { randomUUID } from 'node:crypto';
 import type { BotConfig, ScheduledPrompt, ScheduleType, Project } from '../types.js';
+import { COLORS } from '../types.js';
 import type { ScheduleStore } from '../effects/schedule-store.js';
 import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
 import { truncate } from '../modules/formatters.js';
@@ -130,7 +131,16 @@ async function handleAdd(
   config: BotConfig,
   scheduleStore: ScheduleStore,
 ): Promise<void> {
-  const name = interaction.options.getString('name', true);
+  const name = interaction.options.getString('name', true).trim();
+  if (name.length === 0 || name.length > 100) {
+    await interaction.reply({ content: '❌ Schedule name must be 1-100 characters', flags: [MessageFlags.Ephemeral] });
+    return;
+  }
+  if (/[@#<>]/.test(name)) {
+    await interaction.reply({ content: '❌ Schedule name cannot contain @, #, <, or >', flags: [MessageFlags.Ephemeral] });
+    return;
+  }
+
   const prompt = interaction.options.getString('prompt', true);
   const cwd = interaction.options.getString('cwd', true);
   const type = interaction.options.getString('type', true) as ScheduleType;
@@ -196,7 +206,7 @@ async function handleAdd(
         { name: 'Working Directory', value: `\`${cwd}\``, inline: true },
         ...(schedule.nextRunAt ? [{ name: 'Next Run', value: `<t:${Math.floor(new Date(schedule.nextRunAt).getTime() / 1000)}:R>`, inline: true }] : []),
       ],
-      color: 0x43b581,
+      color: COLORS.PostToolUse,
     }],
     flags: [MessageFlags.Ephemeral],
   });
@@ -227,7 +237,7 @@ async function handleList(
     embeds: [{
       title: `⏰ Schedules (${schedules.length})`,
       description: lines.join('\n\n'),
-      color: 0x7289da,
+      color: COLORS.PreToolUse,
     }],
     flags: [MessageFlags.Ephemeral],
   });
@@ -249,7 +259,7 @@ async function handleRemove(
     embeds: [{
       title: '🗑️ Schedule Removed',
       description: `Schedule **${name}** has been removed`,
-      color: 0xe74c3c,
+      color: COLORS.Error,
     }],
     flags: [MessageFlags.Ephemeral],
   });
@@ -271,7 +281,7 @@ async function handleToggle(
     embeds: [{
       title: newState ? '🟢 Schedule Enabled' : '🔴 Schedule Disabled',
       description: `Schedule **${name}** is now ${newState ? 'enabled' : 'disabled'}`,
-      color: newState ? 0x43b581 : 0xe74c3c,
+      color: newState ? COLORS.PostToolUse : COLORS.Error,
     }],
     flags: [MessageFlags.Ephemeral],
   });

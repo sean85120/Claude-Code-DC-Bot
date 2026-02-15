@@ -29,24 +29,27 @@ export class TemplateStore {
     }
   }
 
-  private saveToDisk(): void {
+  private saveToDisk(): boolean {
     try {
       writeFileSync(this.dataFilePath, JSON.stringify(this.templates, null, 2), 'utf-8');
+      return true;
     } catch (error) {
       log.error({ err: error }, 'Failed to save templates');
+      return false;
     }
   }
 
-  /** Save a new template (overwrites if name exists) */
-  save(template: PromptTemplate): void {
+  /** Save a new template (overwrites if name exists). Returns false if persistence failed. */
+  save(template: PromptTemplate): boolean {
     const idx = this.templates.findIndex((t) => t.name === template.name);
     if (idx >= 0) {
       this.templates[idx] = template;
     } else {
       this.templates.push(template);
     }
-    this.saveToDisk();
-    log.info({ name: template.name }, 'Template saved');
+    const ok = this.saveToDisk();
+    if (ok) log.info({ name: template.name }, 'Template saved');
+    return ok;
   }
 
   /** List all templates */
@@ -64,8 +67,8 @@ export class TemplateStore {
     const idx = this.templates.findIndex((t) => t.name === name);
     if (idx < 0) return false;
     this.templates.splice(idx, 1);
-    this.saveToDisk();
-    log.info({ name }, 'Template deleted');
-    return true;
+    const ok = this.saveToDisk();
+    if (ok) log.info({ name }, 'Template deleted');
+    return ok;
   }
 }
