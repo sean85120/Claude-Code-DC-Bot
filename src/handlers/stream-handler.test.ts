@@ -43,6 +43,10 @@ function makeDeps(store: StateStore, usageStore: UsageStore): StreamHandlerDeps 
     cwd: '/test',
     streamUpdateIntervalMs: 2000,
     usageStore,
+    hideReadResults: false,
+    hideSearchResults: false,
+    hideAllToolEmbeds: false,
+    compactToolEmbeds: false,
   };
 }
 
@@ -277,6 +281,244 @@ describe('handleSDKMessage', () => {
       // Plain text 1 time + tool embed 1 time
       expect(sendTextInThread).toHaveBeenCalledTimes(1);
       expect(sendInThread).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('hideReadResults', () => {
+    it('skips Read tool embed when hideReadResults is true', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideReadResults = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Read', input: { file_path: '/a.ts' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      // Tool use is still recorded
+      const session = store.getSession('t1');
+      expect(session?.toolCount).toBe(1);
+      expect(session?.tools['Read']).toBe(1);
+      // But embed is NOT sent
+      expect(sendInThread).not.toHaveBeenCalled();
+    });
+
+    it('sends Read tool embed when hideReadResults is false', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideReadResults = false;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Read', input: { file_path: '/a.ts' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      expect(sendInThread).toHaveBeenCalledTimes(1);
+    });
+
+    it('still sends non-Read tool embeds when hideReadResults is true', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideReadResults = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Bash', input: { command: 'ls' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      expect(sendInThread).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('hideSearchResults', () => {
+    it('skips Glob embed when hideSearchResults is true', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideSearchResults = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Glob', input: { pattern: '**/*.ts' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      const session = store.getSession('t1');
+      expect(session?.toolCount).toBe(1);
+      expect(sendInThread).not.toHaveBeenCalled();
+    });
+
+    it('skips Grep embed when hideSearchResults is true', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideSearchResults = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Grep', input: { pattern: 'TODO' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      expect(sendInThread).not.toHaveBeenCalled();
+    });
+
+    it('still sends non-search embeds when hideSearchResults is true', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideSearchResults = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Write', input: { file_path: '/a.ts', content: 'x' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      expect(sendInThread).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('hideAllToolEmbeds', () => {
+    it('skips all tool embeds when hideAllToolEmbeds is true', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideAllToolEmbeds = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Read', input: { file_path: '/a.ts' }, id: 'tu1' },
+              { type: 'tool_use', name: 'Bash', input: { command: 'ls' }, id: 'tu2' },
+              { type: 'tool_use', name: 'Write', input: { file_path: '/b.ts', content: 'x' }, id: 'tu3' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      const session = store.getSession('t1');
+      expect(session?.toolCount).toBe(3);
+      expect(sendInThread).not.toHaveBeenCalled();
+    });
+
+    it('still records transcript when hideAllToolEmbeds is true', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideAllToolEmbeds = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Bash', input: { command: 'echo hi' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      const session = store.getSession('t1');
+      expect(session?.transcript).toHaveLength(1);
+      expect(session?.transcript[0].toolName).toBe('Bash');
+    });
+  });
+
+  describe('compactToolEmbeds', () => {
+    it('sends compact embed when compactToolEmbeds is true', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.compactToolEmbeds = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Bash', input: { command: 'ls' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      expect(sendInThread).toHaveBeenCalledTimes(1);
+      const embed = vi.mocked(sendInThread).mock.calls[0][1] as Record<string, unknown>;
+      // Compact embeds have description with emoji+name but no author/title/fields
+      expect(embed.description).toContain('Bash');
+      expect(embed.author).toBeUndefined();
+      expect(embed.title).toBeUndefined();
+      expect(embed.fields).toBeUndefined();
+    });
+
+    it('hideAllToolEmbeds takes precedence over compactToolEmbeds', async () => {
+      const deps = makeDeps(store, usageStore);
+      deps.hideAllToolEmbeds = true;
+      deps.compactToolEmbeds = true;
+      const state = makeStreamState();
+
+      await handleSDKMessage(
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'tool_use', name: 'Bash', input: { command: 'ls' }, id: 'tu1' },
+            ],
+          },
+        } as unknown as SDKMessage,
+        deps,
+        state,
+      );
+
+      expect(sendInThread).not.toHaveBeenCalled();
     });
   });
 

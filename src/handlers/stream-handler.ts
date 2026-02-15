@@ -8,6 +8,7 @@ import type { UsageStore } from '../effects/usage-store.js';
 import { sendInThread, sendPlainInThread, editMessageText, sendTextInThread } from '../effects/discord-sender.js';
 import {
   buildToolUseEmbed,
+  buildCompactToolEmbed,
   buildResultEmbed,
   buildErrorEmbed,
 } from '../modules/embeds.js';
@@ -23,6 +24,10 @@ export interface StreamHandlerDeps {
   cwd: string;
   streamUpdateIntervalMs: number;
   usageStore: UsageStore;
+  hideReadResults: boolean;
+  hideSearchResults: boolean;
+  hideAllToolEmbeds: boolean;
+  compactToolEmbeds: boolean;
 }
 
 /**
@@ -206,11 +211,15 @@ export async function handleSDKMessage(
           });
         }
 
-        const embed = buildToolUseEmbed(
-          tool.toolName,
-          tool.toolInput as Record<string, unknown>,
-          cwd,
-        );
+        // Determine whether to skip or compact the embed
+        if (deps.hideAllToolEmbeds) continue;
+        if (deps.hideReadResults && tool.toolName === 'Read') continue;
+        if (deps.hideSearchResults && (tool.toolName === 'Glob' || tool.toolName === 'Grep')) continue;
+
+        const toolInput = tool.toolInput as Record<string, unknown>;
+        const embed = deps.compactToolEmbeds
+          ? buildCompactToolEmbed(tool.toolName, toolInput, cwd)
+          : buildToolUseEmbed(tool.toolName, toolInput, cwd);
         await sendInThread(thread, embed);
       }
       break;

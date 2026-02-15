@@ -46,6 +46,14 @@ export interface BotConfig {
   summaryHourUtc: number;
   /** Enable/disable daily summaries (default: true) */
   summaryEnabled: boolean;
+  /** Hide Read tool embeds from Discord threads (default: false) */
+  hideReadResults: boolean;
+  /** Hide Glob and Grep tool embeds from Discord threads (default: false) */
+  hideSearchResults: boolean;
+  /** Hide all tool embeds from Discord threads (default: false) */
+  hideAllToolEmbeds: boolean;
+  /** Show compact single-line tool embeds instead of full embeds (default: false) */
+  compactToolEmbeds: boolean;
 }
 
 // ─── Session ────────────────────────────────────────

@@ -48,6 +48,23 @@ export function buildToolUseEmbed(
   };
 }
 
+/**
+ * Build a compact (single-line) tool use embed — no fields, minimal description
+ */
+export function buildCompactToolEmbed(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  cwd: string,
+): APIEmbed {
+  const emoji = TOOL_EMOJI[toolName] || '🔧';
+  const display = formatToolInput(toolName, toolInput, cwd);
+
+  return {
+    color: COLORS.PreToolUse,
+    description: `${emoji} **${toolName}** — ${truncate(display.title, 120)}`,
+  };
+}
+
 // ─── Permission Request Embed ─────────────────────────────────
 
 /**

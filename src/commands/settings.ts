@@ -25,6 +25,10 @@ const EDITABLE_KEYS = [
   'DEFAULT_PERMISSION_MODE',
   'RATE_LIMIT_WINDOW_MS',
   'RATE_LIMIT_MAX_REQUESTS',
+  'HIDE_READ_RESULTS',
+  'HIDE_SEARCH_RESULTS',
+  'HIDE_ALL_TOOL_EMBEDS',
+  'COMPACT_TOOL_EMBEDS',
 ] as const;
 
 type EditableKey = (typeof EDITABLE_KEYS)[number];
@@ -36,6 +40,10 @@ const KEY_TO_CONFIG: Record<EditableKey, keyof BotConfig> = {
   DEFAULT_PERMISSION_MODE: 'defaultPermissionMode',
   RATE_LIMIT_WINDOW_MS: 'rateLimitWindowMs',
   RATE_LIMIT_MAX_REQUESTS: 'rateLimitMaxRequests',
+  HIDE_READ_RESULTS: 'hideReadResults',
+  HIDE_SEARCH_RESULTS: 'hideSearchResults',
+  HIDE_ALL_TOOL_EMBEDS: 'hideAllToolEmbeds',
+  COMPACT_TOOL_EMBEDS: 'compactToolEmbeds',
 };
 
 /**
@@ -105,6 +113,10 @@ async function handleView(
     `**DEFAULT_PERMISSION_MODE** — \`${config.defaultPermissionMode}\``,
     `**RATE_LIMIT_WINDOW_MS** — \`${config.rateLimitWindowMs}\``,
     `**RATE_LIMIT_MAX_REQUESTS** — \`${config.rateLimitMaxRequests}\``,
+    `**HIDE_READ_RESULTS** — \`${config.hideReadResults}\``,
+    `**HIDE_SEARCH_RESULTS** — \`${config.hideSearchResults}\``,
+    `**HIDE_ALL_TOOL_EMBEDS** — \`${config.hideAllToolEmbeds}\``,
+    `**COMPACT_TOOL_EMBEDS** — \`${config.compactToolEmbeds}\``,
   ];
 
   await interaction.reply({
@@ -144,6 +156,8 @@ async function handleUpdate(
   const typedConfig = config as unknown as Record<string, unknown>;
   if (key === 'RATE_LIMIT_WINDOW_MS' || key === 'RATE_LIMIT_MAX_REQUESTS') {
     typedConfig[configField] = parseInt(value, 10);
+  } else if (key === 'HIDE_READ_RESULTS' || key === 'HIDE_SEARCH_RESULTS' || key === 'HIDE_ALL_TOOL_EMBEDS' || key === 'COMPACT_TOOL_EMBEDS') {
+    typedConfig[configField] = value === 'true';
   } else {
     typedConfig[configField] = value;
   }
@@ -195,6 +209,15 @@ function validateValue(
       }
       return null;
     }
+
+    case 'HIDE_READ_RESULTS':
+    case 'HIDE_SEARCH_RESULTS':
+    case 'HIDE_ALL_TOOL_EMBEDS':
+    case 'COMPACT_TOOL_EMBEDS':
+      if (value !== 'true' && value !== 'false') {
+        return `Value must be \`true\` or \`false\``;
+      }
+      return null;
 
     default:
       return null;
