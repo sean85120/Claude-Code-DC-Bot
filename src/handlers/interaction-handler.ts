@@ -10,6 +10,8 @@ import * as settingsCmd from '../commands/settings.js';
 import * as reposCmd from '../commands/repos.js';
 import type { RateLimitStore } from '../effects/rate-limit-store.js';
 import type { UsageStore } from '../effects/usage-store.js';
+import type { DailySummaryStore } from '../effects/daily-summary-store.js';
+import * as summaryCmd from '../commands/summary.js';
 import {
   handleAskOptionClick,
   handleAskSubmit,
@@ -25,6 +27,7 @@ export interface InteractionHandlerDeps {
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>;
   rateLimitStore: RateLimitStore;
   usageStore: UsageStore;
+  summaryStore: DailySummaryStore;
 }
 
 /**
@@ -73,6 +76,10 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
 
         case 'repos':
           await reposCmd.execute(interaction, deps.config);
+          break;
+
+        case 'summary':
+          await summaryCmd.execute(interaction, deps.config, deps.summaryStore, deps.client);
           break;
 
         default:

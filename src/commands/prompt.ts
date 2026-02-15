@@ -33,16 +33,16 @@ export function buildPromptCommand(projects: Project[]) {
   const builder = new SlashCommandBuilder()
     .setName('prompt')
     .setDescription('Send a prompt to Claude Code')
-    .addStringOption((opt) =>
-      opt.setName('message').setDescription('Prompt content').setRequired(true),
-    )
     .addStringOption((opt) => {
-      opt.setName('cwd').setDescription('Working directory').setRequired(true);
+      opt.setName('repo').setDescription('Target repository').setRequired(true);
       for (const p of projects.slice(0, 25)) {
         opt.addChoices({ name: `${p.name} — ${p.path}`, value: p.path });
       }
       return opt;
     })
+    .addStringOption((opt) =>
+      opt.setName('message').setDescription('Prompt content').setRequired(true),
+    )
     .addStringOption((opt) =>
       opt
         .setName('model')
@@ -98,7 +98,7 @@ export async function execute(
   }
 
   const message = interaction.options.getString('message', true);
-  const cwd = interaction.options.getString('cwd', true);
+  const cwd = interaction.options.getString('repo', true);
   const model = interaction.options.getString('model') || config.defaultModel;
 
   if (!isAllowedCwd(cwd, config.projects)) {

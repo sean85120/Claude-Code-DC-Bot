@@ -7,6 +7,7 @@ import { data as historyData } from '../commands/history.js';
 import { data as retryData } from '../commands/retry.js';
 import { buildSettingsCommand } from '../commands/settings.js';
 import { buildReposCommand } from '../commands/repos.js';
+import { data as summaryData } from '../commands/summary.js';
 import { logger } from './logger.js';
 
 const log = logger.child({ module: 'Deploy' });
@@ -25,6 +26,7 @@ export function buildCommandArray(projects: Project[]) {
     retryData.toJSON(),
     buildSettingsCommand().toJSON(),
     buildReposCommand(projects).toJSON(),
+    summaryData.toJSON(),
   ];
 }
 
