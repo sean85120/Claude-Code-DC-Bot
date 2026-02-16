@@ -1,12 +1,15 @@
 import {
   SlashCommandBuilder,
+  ChannelType,
   MessageFlags,
   type ChatInputCommandInteraction,
+  type Client,
 } from 'discord.js';
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { BotConfig, Project } from '../types.js';
 import { canExecuteCommand } from '../modules/permissions.js';
+import { normalizeChannelName } from '../modules/channel-utils.js';
 import { deployCommands } from '../effects/command-deployer.js';
 import { logger } from '../effects/logger.js';
 
@@ -55,6 +58,28 @@ export function buildReposCommand(projects: Project[]) {
           return opt;
         });
       return sub;
+    })
+    .addSubcommand((sub) => {
+      sub
+        .setName('rename')
+        .setDescription('Rename a project')
+        .addStringOption((opt) => {
+          opt
+            .setName('name')
+            .setDescription('Current project name')
+            .setRequired(true);
+          for (const p of projects.slice(0, 25)) {
+            opt.addChoices({ name: p.name, value: p.name });
+          }
+          return opt;
+        })
+        .addStringOption((opt) =>
+          opt
+            .setName('new-name')
+            .setDescription('New project name')
+            .setRequired(true),
+        );
+      return sub;
     });
 }
 
@@ -64,6 +89,7 @@ export function buildReposCommand(projects: Project[]) {
 export async function execute(
   interaction: ChatInputCommandInteraction,
   config: BotConfig,
+  client?: Client,
 ): Promise<void> {
   const auth = canExecuteCommand(interaction.user.id, config);
   if (!auth.allowed) {
@@ -85,6 +111,9 @@ export async function execute(
       break;
     case 'remove':
       await handleRemove(interaction, config);
+      break;
+    case 'rename':
+      await handleRename(interaction, config, client);
       break;
   }
 }
@@ -137,6 +166,24 @@ async function handleAdd(
   if (config.projects.some((p) => p.path === path)) {
     await interaction.reply({
       content: `❌ A project with path \`${path}\` already exists`,
+      flags: [MessageFlags.Ephemeral],
+    });
+    return;
+  }
+
+  // Verify the path exists on disk
+  if (!existsSync(path)) {
+    await interaction.reply({
+      content: `❌ Path \`${path}\` does not exist`,
+      flags: [MessageFlags.Ephemeral],
+    });
+    return;
+  }
+
+  // Verify the path is a git repository
+  if (!existsSync(resolve(path, '.git'))) {
+    await interaction.reply({
+      content: `❌ Path \`${path}\` is not a git repository (no \`.git\` folder found)`,
       flags: [MessageFlags.Ephemeral],
     });
     return;
@@ -217,6 +264,127 @@ async function handleRemove(
         title: 'Project Removed',
         description: `**${removed.name}** — \`${removed.path}\``,
         color: 0xf04747,
+      },
+    ],
+  });
+}
+
+/** Escape Discord markdown/mention special patterns in user-supplied text */
+function escapeDiscordMarkdown(text: string): string {
+  return text
+    .replace(/@everyone/g, '@\u200Beveryone')
+    .replace(/@here/g, '@\u200Bhere');
+}
+
+async function handleRename(
+  interaction: ChatInputCommandInteraction,
+  config: BotConfig,
+  client?: Client,
+): Promise<void> {
+  const name = interaction.options.getString('name', true);
+  const newName = interaction.options.getString('new-name', true).trim();
+
+  // Validate new name: length and must produce a valid channel name
+  if (newName.length === 0 || newName.length > 100) {
+    await interaction.reply({
+      content: '❌ New project name must be 1-100 characters',
+      flags: [MessageFlags.Ephemeral],
+    });
+    return;
+  }
+
+  // Ensure the name produces a valid normalized channel name (not empty after sanitization)
+  if (!normalizeChannelName(newName)) {
+    await interaction.reply({
+      content: '❌ Project name must contain at least one alphanumeric character',
+      flags: [MessageFlags.Ephemeral],
+    });
+    return;
+  }
+
+  // Find existing project
+  const project = config.projects.find((p) => p.name === name);
+  if (!project) {
+    await interaction.reply({
+      content: `❌ No project named "${escapeDiscordMarkdown(name)}" found`,
+      flags: [MessageFlags.Ephemeral],
+    });
+    return;
+  }
+
+  // Check for name conflict
+  if (config.projects.some((p) => p.name === newName)) {
+    await interaction.reply({
+      content: `❌ A project named "${escapeDiscordMarkdown(newName)}" already exists`,
+      flags: [MessageFlags.Ephemeral],
+    });
+    return;
+  }
+
+  await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+  const oldName = project.name;
+
+  // Write to disk first, then mutate in-memory (rollback-safe)
+  const updatedProjects = config.projects.map((p) =>
+    p.name === oldName ? { ...p, name: newName } : p,
+  );
+  writeProjectsFile(updatedProjects);
+
+  // Commit in-memory change after successful disk write
+  project.name = newName;
+
+  // Re-register commands so dropdowns update
+  try {
+    await deployCommands(
+      config.discordToken,
+      config.discordClientId,
+      config.discordGuildId,
+      config.projects,
+    );
+  } catch (err) {
+    log.warn({ err }, 'Failed to re-register commands after renaming project');
+  }
+
+  // Auto-rename Discord channel if client is available
+  let channelRenamed = false;
+  if (client) {
+    try {
+      const guild = await client.guilds.fetch(config.discordGuildId);
+      const allChannels = await guild.channels.fetch();
+      const oldNormalized = normalizeChannelName(oldName);
+      if (oldNormalized) {
+        const channel = allChannels.find(
+          (ch) => ch !== null && ch.type === ChannelType.GuildText && ch.name === oldNormalized,
+        );
+        if (channel) {
+          const newNormalized = normalizeChannelName(newName);
+          if (newNormalized) {
+            await channel.setName(newNormalized);
+            channelRenamed = true;
+          }
+        }
+      }
+    } catch (err) {
+      log.warn({ err, oldName, newName }, 'Failed to rename Discord channel');
+    }
+  }
+
+  log.info({ oldName, newName, channelRenamed }, 'Project renamed');
+
+  const escapedOld = escapeDiscordMarkdown(oldName);
+  const escapedNew = escapeDiscordMarkdown(newName);
+  const descriptionLines = [`**${escapedOld}** → **${escapedNew}**`];
+  if (channelRenamed) {
+    descriptionLines.push('Discord channel renamed automatically.');
+  }
+
+  await interaction.editReply({
+    embeds: [
+      {
+        title: 'Project Renamed',
+        description: descriptionLines.join('\n'),
+        color: 0x7289da,
       },
     ],
   });

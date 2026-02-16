@@ -15,6 +15,7 @@ import * as summaryCmd from '../commands/summary.js';
 import * as budgetCmd from '../commands/budget.js';
 import * as templateCmd from '../commands/template.js';
 import * as scheduleCmd from '../commands/schedule.js';
+import * as logsCmd from '../commands/logs.js';
 import {
   handleAskOptionClick,
   handleAskSubmit,
@@ -26,6 +27,7 @@ import type { QueueStore } from '../effects/queue-store.js';
 import type { BudgetStore } from '../effects/budget-store.js';
 import type { TemplateStore } from '../effects/template-store.js';
 import type { ScheduleStore } from '../effects/schedule-store.js';
+import type { LogStore } from '../effects/log-store.js';
 import { sendInThread, sendTextInThread } from '../effects/discord-sender.js';
 import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
 import { truncate } from '../modules/formatters.js';
@@ -48,6 +50,7 @@ export interface InteractionHandlerDeps {
   budgetStore?: BudgetStore;
   templateStore?: TemplateStore;
   scheduleStore?: ScheduleStore;
+  logStore: LogStore;
 }
 
 /**
@@ -97,7 +100,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           break;
 
         case 'repos':
-          await reposCmd.execute(interaction, deps.config);
+          await reposCmd.execute(interaction, deps.config, deps.client);
           break;
 
         case 'summary':
@@ -129,6 +132,10 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           if (deps.scheduleStore) {
             await scheduleCmd.execute(interaction, deps.config, deps.scheduleStore);
           }
+          break;
+
+        case 'logs':
+          await logsCmd.execute(interaction, deps.config, deps.logStore);
           break;
 
         default:

@@ -62,6 +62,8 @@ export interface BotConfig {
   budgetMonthlyLimitUsd: number;
   /** Show git diff summary after session completion (default: true) */
   showGitSummary: boolean;
+  /** Directory for persistent data files (default: process.cwd()) */
+  dataDir: string;
 }
 
 // ─── Session ────────────────────────────────────────
@@ -93,6 +95,8 @@ export interface SessionState {
   abortController: AbortController;
   transcript: TranscriptEntry[];
   attachments?: FileAttachment[];
+  /** Name of the schedule that started this session (if applicable) */
+  scheduleName?: string;
 }
 
 /** A single entry in the conversation transcript */

@@ -40,6 +40,8 @@ Claude Code is powerful but terminal-bound. This bot breaks that limit — you c
 - 📝 **Unified diff display** — Edit tool embeds show a unified diff preview of changes instead of raw input
 - 📄 **Write preview** — Write tool embeds show a content preview with line/character counts
 - 🙈 **Tool embed controls** — Configurable options to hide Read/Search/all tool embeds, or show compact single-line embeds
+- 💾 **Persistent queue storage** — Queued sessions are saved to disk and survive bot restarts
+- 🐳 **Docker deployment** — Multi-stage Dockerfile and docker-compose for containerized deployment
 
 ---
 
@@ -118,6 +120,13 @@ npm run deploy-commands   # 📡 Register slash commands (first time or after ch
 npm run dev               # 🟢 Start the bot
 ```
 
+Or use Docker (see [Docker Deployment](#-docker-deployment) below):
+
+```bash
+npm run deploy-commands   # 📡 Register slash commands (still needed once on the host)
+docker compose up -d      # 🐳 Start the bot in a container
+```
+
 ---
 
 ## 🎮 Usage
@@ -188,6 +197,7 @@ npm run dev               # 🟢 Start the bot
 | `HIDE_SEARCH_RESULTS` | Hide Glob/Grep tool embed cards in threads | `false` |
 | `HIDE_ALL_TOOL_EMBEDS` | Hide all tool embed cards (overrides individual settings) | `false` |
 | `COMPACT_TOOL_EMBEDS` | Show tool embeds as single-line compact cards | `false` |
+| `DATA_DIR` | Directory for persistent data files (JSON stores) | `process.cwd()` |
 
 > 💡 **Tip:** All of these can be changed at runtime via `/settings update` without restarting the bot. After adding new settings keys, run `npm run deploy-commands` to update Discord's slash command choices.
 
@@ -282,6 +292,68 @@ The runner checks every 60 seconds for due schedules, creates a thread, and star
 
 ---
 
+## 🐳 Docker Deployment
+
+Run the bot in a Docker container for easier deployment and isolation. The multi-stage Dockerfile keeps the final image small (only production dependencies + compiled JS).
+
+### Quick start
+
+```bash
+# Build and start
+docker compose up -d
+
+# View logs
+docker compose logs -f bot
+
+# Rebuild after code changes
+docker compose up -d --build
+
+# Stop
+docker compose down
+```
+
+### Setup
+
+1. Configure `.env` and `projects.json` as described in [Quick Start](#-quick-start)
+2. Create a `data/` directory for persistent storage: `mkdir data`
+3. Edit `docker-compose.yml` to mount your project directories — add one volume per project in `projects.json`:
+   ```yaml
+   volumes:
+     - ./data:/data
+     - ./projects.json:/app/projects.json:ro
+     - ~/.claude:/root/.claude:ro
+     # Add your project directories here:
+     - /home/user/projects/my-app:/home/user/projects/my-app
+     - /home/user/projects/api-server:/home/user/projects/api-server
+   ```
+4. Register slash commands before first run (on the host): `npm run deploy-commands`
+5. Run `docker compose up -d`
+
+### Volumes
+
+| Mount | Purpose |
+| --- | --- |
+| `./data:/data` | Persistent stores (daily summaries, templates, schedules, queued sessions, active session recovery) |
+| `./projects.json:/app/projects.json:ro` | Project whitelist (read-only) |
+| `~/.claude:/root/.claude:ro` | Claude CLI login session (read-only) |
+| Project dirs | Each project path from `projects.json` must be mounted at the same path inside the container |
+
+### Persistent data
+
+The `DATA_DIR` environment variable (default: `/data` in the Docker image) controls where all JSON data files are stored. When running with Docker, this is mapped to `./data` on the host via the volume mount. The following files are created automatically:
+
+| File | Contents |
+| --- | --- |
+| `daily-summary.json` | Completed session records per day (up to 30 days) |
+| `active-sessions.json` | Running sessions for crash recovery |
+| `queued-sessions.json` | Queued prompts waiting for a project to become available |
+| `templates.json` | Saved prompt templates |
+| `schedules.json` | Scheduled prompt configurations |
+
+> **Note:** The Claude CLI must be authenticated on the host machine (`claude login`) before starting the container. The `~/.claude` directory is mounted read-only so the bot can use the existing session.
+
+---
+
 ## 🏗️ Architecture
 
 ```
@@ -301,7 +373,8 @@ src/
 - ⚡ **`effects/`** encapsulates all I/O (Discord API, Claude SDK, file system)
 - 🔗 **Permission bridge:** `canUseTool` creates a Promise and stores its `resolve` in the `StateStore`. The SDK pauses until a user clicks Approve/Deny in Discord, which resolves the Promise and unblocks execution
 - 💾 **Session state** is keyed by Discord thread ID and stored in memory. Active sessions are also persisted to `active-sessions.json` for crash recovery
-- 📋 **Session queue** — Per-project queue ensures only one Claude subprocess runs per project directory at a time, preventing file conflicts
+- 📋 **Session queue** — Per-project queue ensures only one Claude subprocess runs per project directory at a time, preventing file conflicts. Queue state is persisted to `queued-sessions.json`
+- 📂 **Data directory** — All persistent stores (daily summaries, templates, schedules, queued sessions, recovery) write JSON files to a configurable `DATA_DIR`, making Docker volume mounts straightforward
 
 ---
 
@@ -355,15 +428,18 @@ npm test -- src/modules/formatters.test.ts
 - [x] Per-project session queue (prevents concurrent sessions on same repo)
 - [x] Session recovery after bot restart (Retry/Dismiss buttons)
 - [x] Unified diff display for Edit tool and Write content preview
+- [x] Cost budget system with daily/weekly/monthly limits and warnings
+- [x] Prompt templates (save, list, run, delete)
+- [x] Git diff summary after session completion
+- [x] Scheduled prompts (daily, weekly, one-time)
+- [x] Persistent queue storage (queued sessions survive restart)
+- [x] Docker deployment with docker-compose
 
 ### Planned
 
-- [ ] Persistent queue storage (queued sessions survive restart)
-- [ ] Docker deployment with docker-compose
 - [ ] Web dashboard for session monitoring and management
 - [ ] Multi-guild support
 - [ ] Webhook integrations (Slack, email notifications)
-- [ ] Usage analytics with cost alerts and budgets
 - [ ] Per-user permission mode overrides
 - [ ] Session tagging and search
 
@@ -396,11 +472,9 @@ Contributions are welcome! Whether it's a bug fix, a new feature, or improved do
 
 ### 💭 Ideas for contribution
 
-- 🐳 Docker deployment setup
 - 🖥️ Web dashboard for session monitoring
 - 🌐 Multi-server (multi-guild) support
 - 🔔 Webhook / notification integrations (Slack, email)
-- 💾 Persistent queue storage (survive restart)
 - 🌍 Localization / i18n support
 - 📈 Usage analytics and cost alerts
 - 🔐 Per-user permission mode overrides
@@ -409,11 +483,9 @@ Contributions are welcome! Whether it's a bug fix, a new feature, or improved do
 
 ## ⚠️ Known Limitations
 
-- 🏠 Runs locally — the host machine must stay on with the terminal open
+- 🏠 Runs locally — the host machine (or Docker container) must stay on; requires Claude Code CLI to be authenticated
 - 📺 Single-guild operation with user whitelist (channel-per-repo routing within the guild)
-- 💾 In-memory session state (active sessions are persisted for crash recovery; daily summary data is persisted to file)
-- 🔑 Requires Claude Code CLI to be authenticated
-- 📋 Queued sessions are in-memory only — lost on restart (active/running sessions are recoverable)
+- 💾 Active session state is in-memory (lost on restart), but sessions are persisted for crash recovery with Retry/Dismiss. Queued sessions, templates, schedules, and daily summaries are all persisted to JSON files in the `DATA_DIR`
 
 ---
 
