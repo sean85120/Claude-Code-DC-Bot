@@ -82,9 +82,10 @@ async function runSchedule(schedule: ScheduledPrompt, deps: ScheduleRunnerDeps):
   const { client, config, store, scheduleStore, budgetStore, startClaudeQuery } = deps;
 
   // Check if a session is already active for this project
+  // Includes waiting_input to match QueueStore.isProjectBusy and prevent file conflicts
   const activeSessions = store.getAllActiveSessions();
   const projectBusy = Array.from(activeSessions.values()).some(
-    (s) => s.cwd === schedule.cwd && (s.status === 'running' || s.status === 'awaiting_permission'),
+    (s) => s.cwd === schedule.cwd && (s.status === 'running' || s.status === 'awaiting_permission' || s.status === 'waiting_input'),
   );
   if (projectBusy) {
     log.info({ schedule: schedule.name, cwd: schedule.cwd }, 'Project busy, skipping scheduled run');

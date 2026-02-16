@@ -57,22 +57,19 @@ export function checkChannelRepoRestriction(
   selectedCwd: string,
   projects: Project[],
 ): { allowed: boolean; reason?: string; boundProjectName?: string } {
-  for (const project of projects) {
-    const normalized = normalizeChannelName(project.name);
-    if (normalized && channelName === normalized) {
-      // This channel is bound to this project
-      if (project.path === selectedCwd) {
-        return { allowed: true, boundProjectName: project.name };
-      }
-      return {
-        allowed: false,
-        reason: `This channel is dedicated to **${project.name}**. Please use the general channel or the correct project channel to run other repos.`,
-        boundProjectName: project.name,
-      };
-    }
+  const boundProject = getProjectFromChannel(channelName, projects);
+  if (!boundProject) {
+    // No project matches this channel name — unrestricted
+    return { allowed: true };
   }
-  // No project matches this channel name — unrestricted
-  return { allowed: true };
+  if (boundProject.path === selectedCwd) {
+    return { allowed: true, boundProjectName: boundProject.name };
+  }
+  return {
+    allowed: false,
+    reason: `This channel is dedicated to **${boundProject.name}**. Please use the general channel or the correct project channel to run other repos.`,
+    boundProjectName: boundProject.name,
+  };
 }
 
 /**

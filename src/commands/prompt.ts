@@ -14,6 +14,7 @@ import type { QueueStore } from '../effects/queue-store.js';
 import type { BudgetStore } from '../effects/budget-store.js';
 import { logger } from '../effects/logger.js';
 import { canExecuteCommand, isAllowedCwd, checkChannelRepoRestriction, getProjectFromChannel } from '../modules/permissions.js';
+import { getChannelName } from '../modules/channel-utils.js';
 
 const log = logger.child({ module: 'Claude' });
 import { buildSessionStartEmbed, buildErrorEmbed, buildQueuedEmbed } from '../modules/embeds.js';
@@ -118,12 +119,11 @@ export async function execute(
   const message = interaction.options.getString('message', true);
   let cwd = interaction.options.getString('repo');
   const model = interaction.options.getString('model') || config.defaultModel;
+  const channelName = getChannelName(interaction.channel);
+  const repoWasAutoDetected = !cwd;
 
   // Auto-detect repo from project channel if not explicitly provided
   if (!cwd) {
-    const channelName = interaction.channel && 'name' in interaction.channel
-      ? (interaction.channel as { name: string }).name
-      : undefined;
     if (channelName) {
       const project = getProjectFromChannel(channelName, config.projects);
       if (project) {
@@ -145,16 +145,12 @@ export async function execute(
   }
 
   // Channel-repo restriction: project channels can only run their own repo
-  if (interaction.channelId !== config.discordChannelId) {
-    const channelName = interaction.channel && 'name' in interaction.channel
-      ? (interaction.channel as { name: string }).name
-      : undefined;
-    if (channelName) {
-      const restriction = checkChannelRepoRestriction(channelName, cwd, config.projects);
-      if (!restriction.allowed) {
-        await interaction.reply({ content: `❌ ${restriction.reason}`, flags: [MessageFlags.Ephemeral] });
-        return;
-      }
+  // Skip when auto-detected (already matched channel → project) or in the general channel
+  if (!repoWasAutoDetected && interaction.channelId !== config.discordChannelId && channelName) {
+    const restriction = checkChannelRepoRestriction(channelName, cwd, config.projects);
+    if (!restriction.allowed) {
+      await interaction.reply({ content: `❌ ${restriction.reason}`, flags: [MessageFlags.Ephemeral] });
+      return;
     }
   }
 

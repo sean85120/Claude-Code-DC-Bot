@@ -22,3 +22,19 @@ export function normalizeChannelName(name: string): string {
   if (!normalized) return '';
   return `${CHANNEL_PREFIX}${normalized}`.slice(0, 100);
 }
+
+/**
+ * Extract the channel name from a Discord interaction's channel object.
+ *
+ * Returns `undefined` if the channel has no `name` property (e.g. DMs, partial channels).
+ *
+ * @param channel - The interaction's channel (may be partial)
+ * @returns The channel name, or undefined
+ */
+export function getChannelName(channel: unknown): string | undefined {
+  if (channel && typeof channel === 'object' && 'name' in channel) {
+    const name = (channel as { name: unknown }).name;
+    return typeof name === 'string' ? name : undefined;
+  }
+  return undefined;
+}

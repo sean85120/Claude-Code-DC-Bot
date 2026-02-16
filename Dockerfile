@@ -16,14 +16,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Create non-root user for defense-in-depth
+RUN addgroup -S botgroup && adduser -S botuser -G botgroup
+
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --from=build /app/dist/ ./dist/
 
 # Data directory for persistent stores (mounted as volume)
-RUN mkdir -p /data
+RUN mkdir -p /data && chown botuser:botgroup /data
 
 ENV DATA_DIR=/data
+
+USER botuser
 
 ENTRYPOINT ["node", "dist/index.js"]

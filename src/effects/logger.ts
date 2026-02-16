@@ -5,24 +5,39 @@ import { LogStore } from './log-store.js';
 /** Global log store for in-memory log access from Discord */
 export const logStore = new LogStore(200);
 
-// Custom writable stream that parses pino JSON and pushes to LogStore
+// Leftover partial line from previous write chunk
+let partialLine = '';
+
+// Custom writable stream that parses pino JSON and pushes to LogStore.
+// Pino may deliver multiple JSON log lines in a single chunk, so we split by newline.
 const logStoreStream = new Writable({
-  write(chunk: Buffer, _encoding: string, callback: () => void) {
+  write(chunk: Buffer, _encoding: string, callback: (error?: Error | null) => void) {
     try {
-      const line = chunk.toString().trim();
-      if (line) {
-        const parsed = JSON.parse(line);
-        const level = pino.levels.labels[parsed.level] ?? String(parsed.level);
-        logStore.push({
-          timestamp: new Date(parsed.time ?? Date.now()),
-          level,
-          module: parsed.module ?? '',
-          message: parsed.msg ?? '',
-          data: parsed.err ? { err: parsed.err } : undefined,
-        });
+      const text = partialLine + chunk.toString();
+      const lines = text.split('\n');
+      // Last element may be incomplete — save it for next chunk
+      partialLine = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed);
+          const level = pino.levels.labels[parsed.level] ?? String(parsed.level);
+          logStore.push({
+            timestamp: new Date(parsed.time ?? Date.now()),
+            level,
+            module: parsed.module ?? '',
+            message: parsed.msg ?? '',
+            data: parsed.err ? { err: parsed.err } : undefined,
+          });
+        } catch {
+          // Ignore individual unparseable lines
+        }
       }
-    } catch {
-      // Ignore unparseable lines
+    } catch (err) {
+      callback(err instanceof Error ? err : new Error(String(err)));
+      return;
     }
     callback();
   },
@@ -40,7 +55,7 @@ const prettyStream = pino.transport({
 
 /** Global pino logger instance */
 export const logger = pino(
-  { level: 'trace' },
+  { level: 'info' },
   pino.multistream([
     { stream: prettyStream, level: 'info' as const },
     { stream: logStoreStream, level: 'info' as const },

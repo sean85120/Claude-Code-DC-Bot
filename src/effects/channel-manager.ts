@@ -1,7 +1,7 @@
 import { ChannelType, type Client, type TextChannel } from 'discord.js';
-
-export { normalizeChannelName } from '../modules/channel-utils.js';
 import { normalizeChannelName } from '../modules/channel-utils.js';
+
+export { normalizeChannelName };
 
 /** In-flight channel creation promises, keyed by normalized channel name */
 const pendingCreations = new Map<string, Promise<{ channelId: string; channel: TextChannel; created: boolean }>>();

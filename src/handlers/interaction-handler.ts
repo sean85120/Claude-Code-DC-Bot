@@ -50,7 +50,7 @@ export interface InteractionHandlerDeps {
   budgetStore?: BudgetStore;
   templateStore?: TemplateStore;
   scheduleStore?: ScheduleStore;
-  logStore?: LogStore;
+  logStore: LogStore;
 }
 
 /**
@@ -135,9 +135,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           break;
 
         case 'logs':
-          if (deps.logStore) {
-            await logsCmd.execute(interaction, deps.config, deps.logStore);
-          }
+          await logsCmd.execute(interaction, deps.config, deps.logStore);
           break;
 
         default:

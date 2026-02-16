@@ -5,6 +5,7 @@ import { UsageStore } from '../effects/usage-store.js';
 import { createInteractionHandler } from './interaction-handler.js';
 import type { BotConfig, PendingApproval } from '../types.js';
 import type { RateLimitStore } from '../effects/rate-limit-store.js';
+import { LogStore } from '../effects/log-store.js';
 
 // Mock discord-sender for recovery tests
 vi.mock('../effects/discord-sender.js', () => ({
@@ -99,6 +100,7 @@ function makeDeps(store?: StateStore) {
     rateLimitStore: { getEntry: vi.fn(), setEntry: vi.fn() } as unknown as RateLimitStore,
     usageStore: new UsageStore(),
     summaryStore: {} as never,
+    logStore: new LogStore(),
   };
 }
 
@@ -426,6 +428,7 @@ describe('createInteractionHandler', () => {
         usageStore: new UsageStore(),
         summaryStore: {} as never,
         recoveryStore: { persist: vi.fn(), remove: vi.fn() },
+        logStore: new LogStore(),
       };
     }
 

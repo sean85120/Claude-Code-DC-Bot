@@ -261,4 +261,57 @@ describe('repos execute', () => {
     expect(config.projects.find((p) => p.name === 'renamed-project')).toBeDefined();
     expect(config.projects.find((p) => p.name === 'existing-project')).toBeUndefined();
   });
+
+  it('rejects name that normalizes to empty channel name', async () => {
+    const config = makeConfig();
+    const interaction = makeInteraction('rename', { name: 'existing-project', 'new-name': '!!!' });
+    await execute(interaction as never, config);
+    expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('alphanumeric'),
+      }),
+    );
+  });
+
+  it('renames project with client and auto-renames Discord channel', async () => {
+    const config = makeConfig();
+    const mockSetName = vi.fn().mockResolvedValue(undefined);
+    const mockClient = {
+      guilds: {
+        fetch: vi.fn().mockResolvedValue({
+          channels: {
+            fetch: vi.fn().mockResolvedValue(
+              new Map([
+                ['ch1', { id: 'ch1', type: 0, name: 'claude-existing-project', setName: mockSetName }],
+              ]).values(),
+            ),
+          },
+        }),
+      },
+    };
+    // Make the allChannels.find work — the fetch returns an iterable Collection-like
+    // We need to mock as a Collection with .find()
+    const foundChannel = { id: 'ch1', type: 0, name: 'claude-existing-project', setName: mockSetName };
+    mockClient.guilds.fetch = vi.fn().mockResolvedValue({
+      channels: {
+        fetch: vi.fn().mockResolvedValue({
+          find: vi.fn().mockReturnValue(foundChannel),
+        }),
+      },
+    });
+
+    const interaction = makeInteraction('rename', { name: 'existing-project', 'new-name': 'my-new-name' });
+    await execute(interaction as never, config, mockClient as never);
+
+    expect(mockSetName).toHaveBeenCalledWith('claude-my-new-name');
+    expect((interaction as Record<string, unknown>).editReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        embeds: expect.arrayContaining([
+          expect.objectContaining({
+            description: expect.stringContaining('channel renamed'),
+          }),
+        ]),
+      }),
+    );
+  });
 });

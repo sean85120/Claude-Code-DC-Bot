@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { QueueEntry } from '../types.js';
 import type { StateStore } from './state-store.js';
@@ -68,7 +68,10 @@ export class QueueStore {
           queuedAt: e.queuedAt.toISOString(),
         }));
       }
-      writeFileSync(this.dataFilePath, JSON.stringify(obj, null, 2), 'utf-8');
+      // Atomic write: write to tmp file, then rename to avoid corruption on crash
+      const tmpPath = this.dataFilePath + '.tmp';
+      writeFileSync(tmpPath, JSON.stringify(obj, null, 2), 'utf-8');
+      renameSync(tmpPath, this.dataFilePath);
       return true;
     } catch (error) {
       log.error({ err: error }, 'Failed to save queued sessions');

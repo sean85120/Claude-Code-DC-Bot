@@ -12,6 +12,7 @@ import type { TemplateStore } from '../effects/template-store.js';
 import type { QueueStore } from '../effects/queue-store.js';
 import type { BudgetStore } from '../effects/budget-store.js';
 import { canExecuteCommand, isAllowedCwd, checkChannelRepoRestriction } from '../modules/permissions.js';
+import { getChannelName } from '../modules/channel-utils.js';
 import { truncate } from '../modules/formatters.js';
 import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
 import {
@@ -225,9 +226,7 @@ async function handleRun(
 
   // Channel-repo restriction: project channels can only run their own repo
   if (interaction.channelId !== config.discordChannelId) {
-    const channelName = interaction.channel && 'name' in interaction.channel
-      ? (interaction.channel as { name: string }).name
-      : undefined;
+    const channelName = getChannelName(interaction.channel);
     if (channelName) {
       const restriction = checkChannelRepoRestriction(channelName, template.cwd, config.projects);
       if (!restriction.allowed) {

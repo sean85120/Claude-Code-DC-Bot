@@ -94,4 +94,24 @@ describe('LogStore', () => {
     const result = store.query();
     expect(result).toHaveLength(20);
   });
+
+  it('handles exact-capacity wraparound correctly', () => {
+    const store = new LogStore(3);
+    // Fill to exact capacity
+    store.push(makeEntry({ message: 'first' }));
+    store.push(makeEntry({ message: 'second' }));
+    store.push(makeEntry({ message: 'third' }));
+    expect(store.size).toBe(3);
+    expect(store.getRecent(3).map((e) => e.message)).toEqual(['first', 'second', 'third']);
+
+    // Overfill by 1 — oldest should be evicted
+    store.push(makeEntry({ message: 'fourth' }));
+    expect(store.size).toBe(3);
+    expect(store.getRecent(3).map((e) => e.message)).toEqual(['second', 'third', 'fourth']);
+
+    // Overfill by 1 more — verify continued correctness
+    store.push(makeEntry({ message: 'fifth' }));
+    expect(store.size).toBe(3);
+    expect(store.getRecent(3).map((e) => e.message)).toEqual(['third', 'fourth', 'fifth']);
+  });
 });

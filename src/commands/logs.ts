@@ -56,7 +56,7 @@ export async function execute(
 
   const level = interaction.options.getString('level') || undefined;
   const module = interaction.options.getString('module') || undefined;
-  const count = interaction.options.getInteger('count') || 20;
+  const count = interaction.options.getInteger('count') ?? 20;
 
   const entries = logStore.query({ level, module, count });
 

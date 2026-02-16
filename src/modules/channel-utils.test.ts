@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeChannelName } from './channel-utils.js';
+import { normalizeChannelName, getChannelName } from './channel-utils.js';
 
 describe('normalizeChannelName', () => {
   it('adds claude- prefix', () => {
@@ -63,5 +63,27 @@ describe('normalizeChannelName', () => {
 
   it('avoids collisions with common channel names', () => {
     expect(normalizeChannelName('general')).toBe('claude-general');
+  });
+});
+
+describe('getChannelName', () => {
+  it('returns name from channel object with name property', () => {
+    expect(getChannelName({ name: 'claude-my-app', type: 0 })).toBe('claude-my-app');
+  });
+
+  it('returns undefined when channel has no name property', () => {
+    expect(getChannelName({ type: 0, parentId: null })).toBeUndefined();
+  });
+
+  it('returns undefined for null channel', () => {
+    expect(getChannelName(null)).toBeUndefined();
+  });
+
+  it('returns undefined for undefined channel', () => {
+    expect(getChannelName(undefined)).toBeUndefined();
+  });
+
+  it('returns undefined when name is not a string', () => {
+    expect(getChannelName({ name: 123 })).toBeUndefined();
   });
 });
