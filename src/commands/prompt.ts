@@ -37,6 +37,9 @@ export function buildPromptCommand(projects: Project[]) {
   const builder = new SlashCommandBuilder()
     .setName('prompt')
     .setDescription('Send a prompt to Claude Code')
+    .addStringOption((opt) =>
+      opt.setName('message').setDescription('Prompt content').setRequired(true),
+    )
     .addStringOption((opt) => {
       opt.setName('repo').setDescription('Target repository (auto-detected in project channels)');
       for (const p of projects.slice(0, 25)) {
@@ -44,9 +47,6 @@ export function buildPromptCommand(projects: Project[]) {
       }
       return opt;
     })
-    .addStringOption((opt) =>
-      opt.setName('message').setDescription('Prompt content').setRequired(true),
-    )
     .addStringOption((opt) =>
       opt
         .setName('model')
