@@ -139,6 +139,7 @@ async function runSchedule(schedule: ScheduledPrompt, deps: ScheduleRunnerDeps):
       pendingApproval: null,
       abortController,
       transcript: [{ timestamp: new Date(), type: 'user', content: schedule.promptText.slice(0, 2000) }],
+      scheduleName: schedule.name,
     };
 
     store.setSession(thread.id, session);

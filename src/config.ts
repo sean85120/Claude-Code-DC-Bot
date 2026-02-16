@@ -49,6 +49,7 @@ export function parseConfig(env: Record<string, string | undefined>): BotConfig 
     budgetWeeklyLimitUsd: safeParseFloat(env.BUDGET_WEEKLY_LIMIT_USD, 0),
     budgetMonthlyLimitUsd: safeParseFloat(env.BUDGET_MONTHLY_LIMIT_USD, 0),
     showGitSummary: env.SHOW_GIT_SUMMARY !== 'false',
+    dataDir: env.DATA_DIR || process.cwd(),
   };
 }
 

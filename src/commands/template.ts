@@ -11,7 +11,7 @@ import type { StateStore } from '../effects/state-store.js';
 import type { TemplateStore } from '../effects/template-store.js';
 import type { QueueStore } from '../effects/queue-store.js';
 import type { BudgetStore } from '../effects/budget-store.js';
-import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
+import { canExecuteCommand, isAllowedCwd, checkChannelRepoRestriction } from '../modules/permissions.js';
 import { truncate } from '../modules/formatters.js';
 import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
 import {
@@ -221,6 +221,20 @@ async function handleRun(
       flags: [MessageFlags.Ephemeral],
     });
     return;
+  }
+
+  // Channel-repo restriction: project channels can only run their own repo
+  if (interaction.channelId !== config.discordChannelId) {
+    const channelName = interaction.channel && 'name' in interaction.channel
+      ? (interaction.channel as { name: string }).name
+      : undefined;
+    if (channelName) {
+      const restriction = checkChannelRepoRestriction(channelName, template.cwd, config.projects);
+      if (!restriction.allowed) {
+        await interaction.reply({ content: `❌ ${restriction.reason}`, flags: [MessageFlags.Ephemeral] });
+        return;
+      }
+    }
   }
 
   // Budget check

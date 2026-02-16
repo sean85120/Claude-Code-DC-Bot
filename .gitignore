@@ -8,3 +8,4 @@ docs/
 CLAUDE.md
 coverage
 daily-summary.json
+queued-sessions.json

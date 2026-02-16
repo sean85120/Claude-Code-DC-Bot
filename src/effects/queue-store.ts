@@ -1,8 +1,27 @@
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { QueueEntry } from '../types.js';
 import type { StateStore } from './state-store.js';
+import { logger } from './logger.js';
+
+const log = logger.child({ module: 'QueueStore' });
+
+/**
+ * JSON-serializable queue entry (Date → ISO string).
+ */
+interface SerializedQueueEntry {
+  id: string;
+  userId: string;
+  promptText: string;
+  cwd: string;
+  model: string;
+  threadId: string;
+  queuedAt: string;
+}
 
 /**
  * Per-project queue management for session scheduling.
+ * Persisted to a JSON file so queued sessions survive bot restarts.
  *
  * Queues are keyed by project path (cwd). When a user sends `/prompt` and the
  * project already has a running session, the prompt is enqueued instead.
@@ -10,6 +29,52 @@ import type { StateStore } from './state-store.js';
  */
 export class QueueStore {
   private queues = new Map<string, QueueEntry[]>();
+  private dataFilePath: string;
+
+  constructor(dataDir = process.cwd()) {
+    this.dataFilePath = resolve(dataDir, 'queued-sessions.json');
+    this.queues = this.loadFromDisk();
+  }
+
+  private loadFromDisk(): Map<string, QueueEntry[]> {
+    if (!existsSync(this.dataFilePath)) return new Map();
+    try {
+      const raw = readFileSync(this.dataFilePath, 'utf-8');
+      const data = JSON.parse(raw) as Record<string, SerializedQueueEntry[]>;
+      const map = new Map<string, QueueEntry[]>();
+      for (const [key, entries] of Object.entries(data)) {
+        if (!Array.isArray(entries)) continue;
+        const parsed = entries.map((e) => ({
+          ...e,
+          queuedAt: new Date(e.queuedAt),
+        }));
+        if (parsed.length > 0) {
+          map.set(key, parsed);
+        }
+      }
+      return map;
+    } catch (error) {
+      log.warn({ err: error }, 'Failed to load queued sessions, starting fresh');
+      return new Map();
+    }
+  }
+
+  private saveToDisk(): boolean {
+    try {
+      const obj: Record<string, SerializedQueueEntry[]> = {};
+      for (const [key, entries] of this.queues) {
+        obj[key] = entries.map((e) => ({
+          ...e,
+          queuedAt: e.queuedAt.toISOString(),
+        }));
+      }
+      writeFileSync(this.dataFilePath, JSON.stringify(obj, null, 2), 'utf-8');
+      return true;
+    } catch (error) {
+      log.error({ err: error }, 'Failed to save queued sessions');
+      return false;
+    }
+  }
 
   /**
    * Add an entry to the project queue
@@ -21,6 +86,7 @@ export class QueueStore {
     const queue = this.queues.get(cwd) ?? [];
     queue.push(entry);
     this.queues.set(cwd, queue);
+    this.saveToDisk();
     return queue.length;
   }
 
@@ -36,6 +102,7 @@ export class QueueStore {
     if (queue.length === 0) {
       this.queues.delete(cwd);
     }
+    this.saveToDisk();
     return entry;
   }
 
@@ -56,6 +123,7 @@ export class QueueStore {
     } else {
       this.queues.set(cwd, filtered);
     }
+    this.saveToDisk();
     return true;
   }
 

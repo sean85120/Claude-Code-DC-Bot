@@ -176,3 +176,273 @@ describe('prompt execute', () => {
     expect(session?.transcript[0].content).toBe('Fix bug');
   });
 });
+
+describe('prompt channel-repo restriction', () => {
+  const multiProjectConfig: BotConfig = {
+    ...mockConfig,
+    projects: [
+      { name: 'my-app', path: '/my-app' },
+      { name: 'backend', path: '/backend' },
+    ],
+    defaultCwd: '/my-app',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('denies wrong repo in a project-specific channel', async () => {
+    const interaction = makeInteraction({
+      channelId: 'some-project-channel', // not the general channel
+      channel: {
+        type: ChannelType.GuildText,
+        name: 'claude-my-app',
+        parentId: null,
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Fix bug';
+          if (name === 'repo') return '/backend'; // wrong repo for this channel
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn();
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+    expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('dedicated to'),
+        flags: [MessageFlags.Ephemeral],
+      }),
+    );
+    expect(startQuery).not.toHaveBeenCalled();
+    expect(deferReply).not.toHaveBeenCalled();
+  });
+
+  it('allows correct repo in a project-specific channel', async () => {
+    const interaction = makeInteraction({
+      channelId: 'some-project-channel',
+      channel: {
+        type: ChannelType.GuildText,
+        name: 'claude-my-app',
+        parentId: null,
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Fix bug';
+          if (name === 'repo') return '/my-app'; // correct repo
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn().mockResolvedValue(undefined);
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+    expect(deferReply).toHaveBeenCalled();
+    expect(store.getSession('thread-1')).not.toBeNull();
+  });
+
+  it('allows any repo from the general channel', async () => {
+    const interaction = makeInteraction({
+      channelId: 'channel-1', // matches config.discordChannelId
+      channel: {
+        type: ChannelType.GuildText,
+        name: 'general',
+        parentId: null,
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Fix bug';
+          if (name === 'repo') return '/backend'; // different repo, but from general channel
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn().mockResolvedValue(undefined);
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+    expect(deferReply).toHaveBeenCalled();
+    expect(store.getSession('thread-1')).not.toBeNull();
+  });
+
+  it('allows any repo from a non-project channel', async () => {
+    const interaction = makeInteraction({
+      channelId: 'random-channel-id',
+      channel: {
+        type: ChannelType.GuildText,
+        name: 'random-chat',
+        parentId: null,
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Fix bug';
+          if (name === 'repo') return '/my-app';
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn().mockResolvedValue(undefined);
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+    expect(deferReply).toHaveBeenCalled();
+    expect(store.getSession('thread-1')).not.toBeNull();
+  });
+
+  it('skips restriction when channel has no name property', async () => {
+    const interaction = makeInteraction({
+      channelId: 'some-channel-id',
+      channel: {
+        type: ChannelType.GuildText,
+        parentId: null,
+        // no 'name' property
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Fix bug';
+          if (name === 'repo') return '/backend';
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn().mockResolvedValue(undefined);
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+    // Should proceed without restriction since channel name is unavailable
+    expect(deferReply).toHaveBeenCalled();
+  });
+});
+
+describe('prompt auto-select repo', () => {
+  const multiProjectConfig: BotConfig = {
+    ...mockConfig,
+    projects: [
+      { name: 'my-app', path: '/my-app' },
+      { name: 'backend', path: '/backend' },
+    ],
+    defaultCwd: '/my-app',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('auto-selects repo when in a project channel and repo is not specified', async () => {
+    const interaction = makeInteraction({
+      channelId: 'some-project-channel',
+      channel: {
+        type: ChannelType.GuildText,
+        name: 'claude-my-app',
+        parentId: null,
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Fix bug';
+          if (name === 'repo') return null; // not specified
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn().mockResolvedValue(undefined);
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+
+    expect(deferReply).toHaveBeenCalled();
+    const session = store.getSession('thread-1');
+    expect(session).not.toBeNull();
+    expect(session?.cwd).toBe('/my-app');
+  });
+
+  it('replies with error when repo is null and channel is not a project channel', async () => {
+    const interaction = makeInteraction({
+      channelId: 'channel-1', // general channel
+      channel: {
+        type: ChannelType.GuildText,
+        name: 'general',
+        parentId: null,
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Fix bug';
+          if (name === 'repo') return null;
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn();
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+
+    expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('Please specify a repo'),
+        flags: [MessageFlags.Ephemeral],
+      }),
+    );
+    expect(startQuery).not.toHaveBeenCalled();
+  });
+
+  it('replies with error when repo is null and channel has no name', async () => {
+    const interaction = makeInteraction({
+      channelId: 'some-channel',
+      channel: {
+        type: ChannelType.GuildText,
+        parentId: null,
+        // no name
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Fix bug';
+          if (name === 'repo') return null;
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn();
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+
+    expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('Please specify a repo'),
+        flags: [MessageFlags.Ephemeral],
+      }),
+    );
+    expect(startQuery).not.toHaveBeenCalled();
+  });
+
+  it('uses explicitly provided repo even in a project channel', async () => {
+    const interaction = makeInteraction({
+      channelId: 'channel-1', // general channel
+      channel: {
+        type: ChannelType.GuildText,
+        name: 'general',
+        parentId: null,
+      },
+      options: {
+        getString: vi.fn((name: string) => {
+          if (name === 'message') return 'Deploy';
+          if (name === 'repo') return '/backend'; // explicitly provided
+          if (name === 'model') return null;
+          return null;
+        }),
+      },
+    });
+    const store = new StateStore();
+    const startQuery = vi.fn().mockResolvedValue(undefined);
+    await execute(interaction as never, multiProjectConfig, store, startQuery);
+
+    expect(deferReply).toHaveBeenCalled();
+    const session = store.getSession('thread-1');
+    expect(session).not.toBeNull();
+    expect(session?.cwd).toBe('/backend');
+  });
+});

@@ -79,6 +79,15 @@ const mockConfig: BotConfig = {
   summaryChannelName: 'claude-daily-summary',
   summaryHourUtc: 0,
   summaryEnabled: true,
+  hideReadResults: false,
+  hideSearchResults: false,
+  hideAllToolEmbeds: false,
+  compactToolEmbeds: false,
+  budgetDailyLimitUsd: 0,
+  budgetWeeklyLimitUsd: 0,
+  budgetMonthlyLimitUsd: 0,
+  showGitSummary: true,
+  dataDir: '/tmp/test-data',
 };
 
 function makeDeps(store?: StateStore) {

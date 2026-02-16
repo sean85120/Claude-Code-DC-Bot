@@ -1,6 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { QueueStore } from './queue-store.js';
 import { StateStore } from './state-store.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { QueueEntry, SessionState } from '../types.js';
 
 function makeEntry(overrides: Partial<QueueEntry> = {}): QueueEntry {
@@ -37,10 +40,16 @@ function makeSession(overrides: Partial<SessionState> = {}): SessionState {
 }
 
 describe('QueueStore', () => {
+  let tempDir: string;
   let store: QueueStore;
 
   beforeEach(() => {
-    store = new QueueStore();
+    tempDir = mkdtempSync(join(tmpdir(), 'queue-test-'));
+    store = new QueueStore(tempDir);
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
   });
 
   describe('enqueue', () => {
@@ -227,6 +236,59 @@ describe('QueueStore', () => {
       store.enqueue('/project-b', makeEntry({ threadId: 'thread-3' }));
 
       expect(store.getTotalQueuedCount()).toBe(3);
+    });
+  });
+
+  describe('persistence', () => {
+    it('persists entries across instances', () => {
+      store.enqueue('/project-a', makeEntry({ threadId: 'thread-1', promptText: 'Task A' }));
+      store.enqueue('/project-b', makeEntry({ threadId: 'thread-2', promptText: 'Task B' }));
+
+      const store2 = new QueueStore(tempDir);
+      expect(store2.getQueue('/project-a')).toHaveLength(1);
+      expect(store2.getQueue('/project-a')[0].promptText).toBe('Task A');
+      expect(store2.getQueue('/project-b')).toHaveLength(1);
+      expect(store2.getQueue('/project-b')[0].promptText).toBe('Task B');
+    });
+
+    it('persists dequeue across instances', () => {
+      store.enqueue('/project', makeEntry({ threadId: 'thread-1', promptText: 'First' }));
+      store.enqueue('/project', makeEntry({ threadId: 'thread-2', promptText: 'Second' }));
+      store.dequeue('/project');
+
+      const store2 = new QueueStore(tempDir);
+      expect(store2.getQueue('/project')).toHaveLength(1);
+      expect(store2.getQueue('/project')[0].promptText).toBe('Second');
+    });
+
+    it('persists cancel across instances', () => {
+      store.enqueue('/project', makeEntry({ threadId: 'thread-1' }));
+      store.enqueue('/project', makeEntry({ threadId: 'thread-2' }));
+      store.cancel('/project', 'thread-1');
+
+      const store2 = new QueueStore(tempDir);
+      expect(store2.getQueue('/project')).toHaveLength(1);
+      expect(store2.getQueue('/project')[0].threadId).toBe('thread-2');
+    });
+
+    it('round-trips queuedAt as Date', () => {
+      const now = new Date('2026-02-16T12:30:00.000Z');
+      store.enqueue('/project', makeEntry({ threadId: 'thread-1', queuedAt: now }));
+
+      const store2 = new QueueStore(tempDir);
+      const entry = store2.getQueue('/project')[0];
+      expect(entry.queuedAt).toBeInstanceOf(Date);
+      expect(entry.queuedAt.toISOString()).toBe('2026-02-16T12:30:00.000Z');
+    });
+
+    it('starts empty when no file exists', () => {
+      const freshDir = mkdtempSync(join(tmpdir(), 'queue-fresh-'));
+      try {
+        const freshStore = new QueueStore(freshDir);
+        expect(freshStore.getTotalQueuedCount()).toBe(0);
+      } finally {
+        rmSync(freshDir, { recursive: true, force: true });
+      }
     });
   });
 });

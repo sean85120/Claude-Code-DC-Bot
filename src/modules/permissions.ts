@@ -1,4 +1,5 @@
 import type { BotConfig, Project } from '../types.js';
+import { normalizeChannelName } from './channel-utils.js';
 
 /**
  * Check if a user is in the allowed list
@@ -36,4 +37,60 @@ export function canExecuteCommand(
  */
 export function isAllowedCwd(cwd: string, projects: Project[]): boolean {
   return projects.some((p) => p.path === cwd);
+}
+
+/**
+ * Check whether a repo selection is allowed in the given channel.
+ *
+ * Rules:
+ * - Channels matching a project's normalized name only allow that project's path
+ * - All other channels (including the general channel) are unrestricted
+ * - The caller should skip this check for the general channel (by ID) before calling
+ *
+ * @param channelName - The name of the channel where the command was invoked
+ * @param selectedCwd - The repo path the user selected
+ * @param projects - The project list
+ * @returns Object with `allowed` boolean and optional `reason` / `boundProjectName`
+ */
+export function checkChannelRepoRestriction(
+  channelName: string,
+  selectedCwd: string,
+  projects: Project[],
+): { allowed: boolean; reason?: string; boundProjectName?: string } {
+  for (const project of projects) {
+    const normalized = normalizeChannelName(project.name);
+    if (normalized && channelName === normalized) {
+      // This channel is bound to this project
+      if (project.path === selectedCwd) {
+        return { allowed: true, boundProjectName: project.name };
+      }
+      return {
+        allowed: false,
+        reason: `This channel is dedicated to **${project.name}**. Please use the general channel or the correct project channel to run other repos.`,
+        boundProjectName: project.name,
+      };
+    }
+  }
+  // No project matches this channel name — unrestricted
+  return { allowed: true };
+}
+
+/**
+ * Determine which project a channel belongs to based on channel name.
+ *
+ * Compares the channel name against each project's normalized name.
+ * Returns the matching `Project` or `null` if the channel is not a project channel.
+ *
+ * @param channelName - The Discord channel name
+ * @param projects - The project list
+ * @returns The matching project or null
+ */
+export function getProjectFromChannel(channelName: string, projects: Project[]): Project | null {
+  for (const project of projects) {
+    const normalized = normalizeChannelName(project.name);
+    if (normalized && channelName === normalized) {
+      return project;
+    }
+  }
+  return null;
 }

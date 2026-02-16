@@ -1,0 +1,18 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      # Persistent data (daily summaries, templates, schedules, queued sessions, recovery)
+      - ./data:/data
+      # Project configuration (read-only)
+      - ./projects.json:/app/projects.json:ro
+      # Claude CLI session (read-only)
+      - ~/.claude:/root/.claude:ro
+      # Mount your project directories here — add one line per project in projects.json
+      # Example:
+      # - /home/user/projects/my-app:/home/user/projects/my-app
+    restart: unless-stopped
+    stop_grace_period: 10s

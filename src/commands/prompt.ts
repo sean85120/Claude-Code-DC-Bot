@@ -13,7 +13,7 @@ import type { RateLimitStore } from '../effects/rate-limit-store.js';
 import type { QueueStore } from '../effects/queue-store.js';
 import type { BudgetStore } from '../effects/budget-store.js';
 import { logger } from '../effects/logger.js';
-import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
+import { canExecuteCommand, isAllowedCwd, checkChannelRepoRestriction, getProjectFromChannel } from '../modules/permissions.js';
 
 const log = logger.child({ module: 'Claude' });
 import { buildSessionStartEmbed, buildErrorEmbed, buildQueuedEmbed } from '../modules/embeds.js';
@@ -37,7 +37,7 @@ export function buildPromptCommand(projects: Project[]) {
     .setName('prompt')
     .setDescription('Send a prompt to Claude Code')
     .addStringOption((opt) => {
-      opt.setName('repo').setDescription('Target repository').setRequired(true);
+      opt.setName('repo').setDescription('Target repository (auto-detected in project channels)');
       for (const p of projects.slice(0, 25)) {
         opt.addChoices({ name: `${p.name} — ${p.path}`, value: p.path });
       }
@@ -116,12 +116,46 @@ export async function execute(
   }
 
   const message = interaction.options.getString('message', true);
-  const cwd = interaction.options.getString('repo', true);
+  let cwd = interaction.options.getString('repo');
   const model = interaction.options.getString('model') || config.defaultModel;
+
+  // Auto-detect repo from project channel if not explicitly provided
+  if (!cwd) {
+    const channelName = interaction.channel && 'name' in interaction.channel
+      ? (interaction.channel as { name: string }).name
+      : undefined;
+    if (channelName) {
+      const project = getProjectFromChannel(channelName, config.projects);
+      if (project) {
+        cwd = project.path;
+      }
+    }
+    if (!cwd) {
+      await interaction.reply({
+        content: '❌ Please specify a repo or run this command in a project channel',
+        flags: [MessageFlags.Ephemeral],
+      });
+      return;
+    }
+  }
 
   if (!isAllowedCwd(cwd, config.projects)) {
     await interaction.reply({ content: '❌ Working directory is not in the allowed project list', flags: [MessageFlags.Ephemeral] });
     return;
+  }
+
+  // Channel-repo restriction: project channels can only run their own repo
+  if (interaction.channelId !== config.discordChannelId) {
+    const channelName = interaction.channel && 'name' in interaction.channel
+      ? (interaction.channel as { name: string }).name
+      : undefined;
+    if (channelName) {
+      const restriction = checkChannelRepoRestriction(channelName, cwd, config.projects);
+      if (!restriction.allowed) {
+        await interaction.reply({ content: `❌ ${restriction.reason}`, flags: [MessageFlags.Ephemeral] });
+        return;
+      }
+    }
   }
 
   await deferReply(interaction);

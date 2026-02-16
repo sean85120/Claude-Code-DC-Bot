@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isUserAuthorized, canExecuteCommand, isAllowedCwd } from './permissions.js';
+import { isUserAuthorized, canExecuteCommand, isAllowedCwd, checkChannelRepoRestriction, getProjectFromChannel } from './permissions.js';
 import type { BotConfig, Project } from '../types.js';
 
 describe('isUserAuthorized', () => {
@@ -53,5 +53,86 @@ describe('isAllowedCwd', () => {
 
   it('sub-paths do not count as a match', () => {
     expect(isAllowedCwd('/home/user/project-a/src', projects)).toBe(false);
+  });
+});
+
+describe('checkChannelRepoRestriction', () => {
+  const projects: Project[] = [
+    { name: 'my-app', path: '/home/user/my-app' },
+    { name: 'backend', path: '/home/user/backend' },
+  ];
+
+  it('allows matching project in its own channel', () => {
+    const result = checkChannelRepoRestriction('claude-my-app', '/home/user/my-app', projects);
+    expect(result.allowed).toBe(true);
+    expect(result.boundProjectName).toBe('my-app');
+  });
+
+  it('denies non-matching project in a project channel', () => {
+    const result = checkChannelRepoRestriction('claude-my-app', '/home/user/backend', projects);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('my-app');
+    expect(result.boundProjectName).toBe('my-app');
+  });
+
+  it('allows any project in non-project channels', () => {
+    const result = checkChannelRepoRestriction('random-channel', '/home/user/my-app', projects);
+    expect(result.allowed).toBe(true);
+    expect(result.boundProjectName).toBeUndefined();
+  });
+
+  it('allows any project in general-like channels', () => {
+    const result = checkChannelRepoRestriction('general', '/home/user/backend', projects);
+    expect(result.allowed).toBe(true);
+  });
+
+  it('handles empty project list', () => {
+    const result = checkChannelRepoRestriction('claude-my-app', '/some/path', []);
+    expect(result.allowed).toBe(true);
+  });
+
+  it('denies from second project channel selecting first project', () => {
+    const result = checkChannelRepoRestriction('claude-backend', '/home/user/my-app', projects);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('backend');
+    expect(result.boundProjectName).toBe('backend');
+  });
+
+  it('allows second project in its own channel', () => {
+    const result = checkChannelRepoRestriction('claude-backend', '/home/user/backend', projects);
+    expect(result.allowed).toBe(true);
+    expect(result.boundProjectName).toBe('backend');
+  });
+});
+
+describe('getProjectFromChannel', () => {
+  const projects: Project[] = [
+    { name: 'my-app', path: '/home/user/my-app' },
+    { name: 'backend', path: '/home/user/backend' },
+  ];
+
+  it('returns the matching project for a project channel', () => {
+    const result = getProjectFromChannel('claude-my-app', projects);
+    expect(result).toEqual({ name: 'my-app', path: '/home/user/my-app' });
+  });
+
+  it('returns the second project for its channel', () => {
+    const result = getProjectFromChannel('claude-backend', projects);
+    expect(result).toEqual({ name: 'backend', path: '/home/user/backend' });
+  });
+
+  it('returns null for a non-project channel', () => {
+    const result = getProjectFromChannel('general', projects);
+    expect(result).toBeNull();
+  });
+
+  it('returns null for an empty project list', () => {
+    const result = getProjectFromChannel('claude-my-app', []);
+    expect(result).toBeNull();
+  });
+
+  it('returns null for a random channel name', () => {
+    const result = getProjectFromChannel('off-topic', projects);
+    expect(result).toBeNull();
   });
 });

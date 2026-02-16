@@ -11,6 +11,7 @@ import { data as summaryData } from '../commands/summary.js';
 import { buildBudgetCommand } from '../commands/budget.js';
 import { buildTemplateCommand } from '../commands/template.js';
 import { buildScheduleCommand } from '../commands/schedule.js';
+import { data as logsData } from '../commands/logs.js';
 import { logger } from './logger.js';
 
 const log = logger.child({ module: 'Deploy' });
@@ -33,6 +34,7 @@ export function buildCommandArray(projects: Project[]) {
     buildBudgetCommand().toJSON(),
     buildTemplateCommand(projects).toJSON(),
     buildScheduleCommand(projects).toJSON(),
+    logsData.toJSON(),
   ];
 }
 

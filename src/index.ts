@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv';
 import { ChannelType, type ThreadChannel, type TextChannel } from 'discord.js';
 import { parseConfig, validateConfig } from './config.js';
 import type { SessionState, CompletedSessionRecord } from './types.js';
-import { logger, printBanner } from './effects/logger.js';
+import { logger, printBanner, logStore } from './effects/logger.js';
 import { truncate, formatDuration } from './modules/formatters.js';
 import { normalizeChannelName } from './effects/channel-manager.js';
 import { emptyTokenUsage } from './modules/token-usage.js';
@@ -50,12 +50,12 @@ async function main() {
   const store = new StateStore();
   const rateLimitStore = new RateLimitStore();
   const usageStore = new UsageStore();
-  const summaryStore = new DailySummaryStore();
-  const recoveryStore = new SessionRecoveryStore();
-  const queueStore = new QueueStore();
+  const summaryStore = new DailySummaryStore(config.dataDir);
+  const recoveryStore = new SessionRecoveryStore(config.dataDir);
+  const queueStore = new QueueStore(config.dataDir);
   const budgetStore = new BudgetStore(summaryStore);
-  const templateStore = new TemplateStore();
-  const scheduleStore = new ScheduleStore();
+  const templateStore = new TemplateStore(config.dataDir);
+  const scheduleStore = new ScheduleStore(config.dataDir);
 
   // Claude query launch function
   async function startClaudeQuery(session: SessionState, threadId: string): Promise<void> {
@@ -116,7 +116,10 @@ async function main() {
           const currentSession = store.getSession(threadId);
           if (currentSession?.userId) {
             if (thread.archived) await thread.setArchived(false);
-            await thread.send(`<@${currentSession.userId}> An error occurred during task execution.`);
+            const errorNotification = currentSession.scheduleName
+              ? `<@${currentSession.userId}> Scheduled task **${currentSession.scheduleName}** encountered an error.`
+              : `<@${currentSession.userId}> An error occurred during task execution.`;
+            await thread.send(errorNotification);
           }
           await thread.setArchived(true);
         } catch {
@@ -182,7 +185,10 @@ async function main() {
           const currentSession = store.getSession(threadId);
           if (currentSession?.userId) {
             if (thread.archived) await thread.setArchived(false);
-            await thread.send(`<@${currentSession.userId}> Task completed. You can continue asking in this Thread or use \`/stop\` to end.`);
+            const completionNotification = currentSession.scheduleName
+              ? `<@${currentSession.userId}> Scheduled task **${currentSession.scheduleName}** completed. You can review results in this thread.`
+              : `<@${currentSession.userId}> Task completed. You can continue asking in this Thread or use \`/stop\` to end.`;
+            await thread.send(completionNotification);
           }
         } catch {
           // Thread may no longer exist
@@ -253,6 +259,7 @@ async function main() {
     budgetStore,
     templateStore,
     scheduleStore,
+    logStore,
   });
 
   // Create Thread message handler (for follow-up questions)
