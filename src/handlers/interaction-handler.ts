@@ -153,10 +153,16 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
 
       if (customId.startsWith('approve:')) {
         const threadId = customId.slice('approve:'.length);
+        const session = deps.store.getSession(threadId);
         const pending = deps.store.getPendingApproval(threadId);
 
         if (!pending) {
           await interaction.reply({ content: '⚠️ This request has expired', flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        if (session && session.userId !== interaction.user.id) {
+          await interaction.reply({ content: '❌ Only the session owner can approve tools.', flags: [MessageFlags.Ephemeral] });
           return;
         }
 
@@ -171,10 +177,16 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
 
       if (customId.startsWith('always_allow:')) {
         const threadId = customId.slice('always_allow:'.length);
+        const session = deps.store.getSession(threadId);
         const pending = deps.store.getPendingApproval(threadId);
 
         if (!pending) {
           await interaction.reply({ content: '⚠️ This request has expired', flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        if (session && session.userId !== interaction.user.id) {
+          await interaction.reply({ content: '❌ Only the session owner can approve tools.', flags: [MessageFlags.Ephemeral] });
           return;
         }
 
@@ -193,10 +205,16 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
 
       if (customId.startsWith('deny:')) {
         const threadId = customId.slice('deny:'.length);
+        const session = deps.store.getSession(threadId);
         const pending = deps.store.getPendingApproval(threadId);
 
         if (!pending) {
           await interaction.reply({ content: '⚠️ This request has expired', flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        if (session && session.userId !== interaction.user.id) {
+          await interaction.reply({ content: '❌ Only the session owner can approve tools.', flags: [MessageFlags.Ephemeral] });
           return;
         }
 

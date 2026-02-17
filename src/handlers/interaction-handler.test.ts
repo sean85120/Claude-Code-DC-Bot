@@ -207,7 +207,7 @@ describe('createInteractionHandler', () => {
         sessionId: null,
         status: 'awaiting_permission',
         threadId: 't1',
-        userId: 'u1',
+        userId: 'user1',
         startedAt: new Date(),
         lastActivityAt: new Date(),
         promptText: 'test',
@@ -218,6 +218,7 @@ describe('createInteractionHandler', () => {
         pendingApproval: null,
         abortController: new AbortController(),
         transcript: [],
+        allowedTools: new Set(),
       });
 
       const resolveResult = vi.fn();
@@ -259,7 +260,7 @@ describe('createInteractionHandler', () => {
         sessionId: null,
         status: 'awaiting_permission',
         threadId: 't1',
-        userId: 'u1',
+        userId: 'user1',
         startedAt: new Date(),
         lastActivityAt: new Date(),
         promptText: 'test',
@@ -270,6 +271,7 @@ describe('createInteractionHandler', () => {
         pendingApproval: null,
         abortController: new AbortController(),
         transcript: [],
+        allowedTools: new Set(),
       });
 
       const resolveResult = vi.fn();
@@ -311,6 +313,7 @@ describe('createInteractionHandler', () => {
         pendingApproval: null,
         abortController: new AbortController(),
         transcript: [],
+        allowedTools: new Set(),
       });
 
       const deps = makeDeps(store);
@@ -508,6 +511,7 @@ describe('createInteractionHandler', () => {
         pendingApproval: null,
         abortController: new AbortController(),
         transcript: [],
+        allowedTools: new Set(),
       });
       const deps = makeRecoveryDeps(store);
       const handler = createInteractionHandler(deps);

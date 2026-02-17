@@ -89,7 +89,8 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
     const { store, threadId, thread, cwd, approvalTimeoutMs } = deps;
 
     // Auto-approve if this tool has been always-allowed for this session
-    if (store.isToolAllowed(threadId, toolName)) {
+    // (skip AskUserQuestion/AskUser — these need interactive answers)
+    if (store.isToolAllowed(threadId, toolName) && toolName !== 'AskUserQuestion' && toolName !== 'AskUser') {
       log.info({ threadId, tool: toolName }, 'Auto-approved (always allow)');
       return { behavior: 'allow' as const, updatedInput: input };
     }
