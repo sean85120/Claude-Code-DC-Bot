@@ -57,13 +57,19 @@ export async function sendEmbedWithApprovalButtons(
     .setStyle(ButtonStyle.Success)
     .setEmoji('✅');
 
+  const alwaysAllow = new ButtonBuilder()
+    .setCustomId(`always_allow:${threadId}`)
+    .setLabel('Always Allow')
+    .setStyle(ButtonStyle.Primary)
+    .setEmoji('🔓');
+
   const deny = new ButtonBuilder()
     .setCustomId(`deny:${threadId}`)
     .setLabel('Deny')
     .setStyle(ButtonStyle.Danger)
     .setEmoji('❌');
 
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(approve, deny);
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(approve, alwaysAllow, deny);
 
   return channel.send({
     embeds: [embed],

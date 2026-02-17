@@ -35,6 +35,7 @@ function makeStore(threadId: string, userId = 'u1'): StateStore {
     pendingApproval: null,
     abortController: new AbortController(),
     transcript: [],
+    allowedTools: new Set(),
   });
   return store;
 }
@@ -60,6 +61,41 @@ describe('createCanUseTool', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  describe('Always-allow auto-approve', () => {
+    it('auto-approves when tool is in allowedTools', async () => {
+      const store = makeStore('t1');
+      store.addAllowedTool('t1', 'Bash');
+      const thread = makeThread('t1');
+      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+
+      const signal = new AbortController().signal;
+      const result = await canUseTool('Bash', { command: 'ls' }, { signal });
+
+      expect(result.behavior).toBe('allow');
+      expect(result.updatedInput).toEqual({ command: 'ls' });
+      // Should NOT send any Discord messages
+      expect(sendEmbedWithApprovalButtons).not.toHaveBeenCalled();
+      expect(sendEmbedWithAskButtons).not.toHaveBeenCalled();
+      expect(sendTextInThread).not.toHaveBeenCalled();
+    });
+
+    it('does not auto-approve tools not in allowedTools', async () => {
+      const store = makeStore('t1');
+      store.addAllowedTool('t1', 'Bash');
+      const thread = makeThread('t1');
+      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+
+      const signal = new AbortController().signal;
+      const promise = canUseTool('Write', { file_path: '/a.ts' }, { signal });
+
+      await waitForPending(store, 't1');
+      expect(sendEmbedWithApprovalButtons).toHaveBeenCalledTimes(1);
+
+      store.resolvePendingApproval('t1', { behavior: 'allow' });
+      await promise;
+    });
   });
 
   describe('General tool permission requests', () => {

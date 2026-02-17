@@ -169,6 +169,28 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
         return;
       }
 
+      if (customId.startsWith('always_allow:')) {
+        const threadId = customId.slice('always_allow:'.length);
+        const pending = deps.store.getPendingApproval(threadId);
+
+        if (!pending) {
+          await interaction.reply({ content: '⚠️ This request has expired', flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        deps.store.addAllowedTool(threadId, pending.toolName);
+        deps.store.resolvePendingApproval(threadId, {
+          behavior: 'allow',
+          updatedInput: pending.toolInput,
+        });
+
+        await interaction.reply({
+          content: `🔓 Always allowed: ${pending.toolName} (for this session)`,
+          flags: [MessageFlags.Ephemeral],
+        });
+        return;
+      }
+
       if (customId.startsWith('deny:')) {
         const threadId = customId.slice('deny:'.length);
         const pending = deps.store.getPendingApproval(threadId);
@@ -273,6 +295,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
             pendingApproval: null,
             abortController,
             transcript: [{ timestamp: new Date(), type: 'user', content: promptText.slice(0, 2000) }],
+            allowedTools: new Set(),
           };
 
           deps.store.setSession(threadId, session);

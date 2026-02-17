@@ -97,6 +97,8 @@ export interface SessionState {
   attachments?: FileAttachment[];
   /** Name of the schedule that started this session (if applicable) */
   scheduleName?: string;
+  /** Tools that have been always-allowed by the user for this session */
+  allowedTools: Set<string>;
 }
 
 /** A single entry in the conversation transcript */
