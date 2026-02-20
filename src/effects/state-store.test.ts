@@ -18,6 +18,7 @@ function makeSession(overrides?: Partial<SessionState>): SessionState {
     pendingApproval: null,
     abortController: new AbortController(),
     transcript: [],
+    allowedTools: new Set(),
     ...overrides,
   };
 }
@@ -153,6 +154,39 @@ describe('StateStore', () => {
     const store = new StateStore();
     store.setSession('t1', makeSession({ status: 'waiting_input' }));
     expect(store.getAllActiveSessions().size).toBe(1);
+  });
+
+  it('addAllowedTool adds tool to session', () => {
+    const store = new StateStore();
+    store.setSession('t1', makeSession());
+    store.addAllowedTool('t1', 'Bash');
+    expect(store.getSession('t1')!.allowedTools.has('Bash')).toBe(true);
+  });
+
+  it('addAllowedTool does nothing for nonexistent session', () => {
+    const store = new StateStore();
+    // should not throw
+    store.addAllowedTool('nonexistent', 'Bash');
+  });
+
+  it('isToolAllowed returns false for unknown session', () => {
+    const store = new StateStore();
+    expect(store.isToolAllowed('nonexistent', 'Bash')).toBe(false);
+  });
+
+  it('isToolAllowed returns false for tool not in set', () => {
+    const store = new StateStore();
+    store.setSession('t1', makeSession());
+    expect(store.isToolAllowed('t1', 'Bash')).toBe(false);
+  });
+
+  it('isToolAllowed returns true after addAllowedTool', () => {
+    const store = new StateStore();
+    store.setSession('t1', makeSession());
+    store.addAllowedTool('t1', 'Bash');
+    expect(store.isToolAllowed('t1', 'Bash')).toBe(true);
+    // Different tool should still be false
+    expect(store.isToolAllowed('t1', 'Write')).toBe(false);
   });
 
   it('resolvePendingApproval', () => {

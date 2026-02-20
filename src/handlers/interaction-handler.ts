@@ -190,6 +190,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           return;
         }
 
+        log.info({ threadId, tool: pending.toolName, userId: interaction.user.id }, 'Always-allow granted');
         deps.store.addAllowedTool(threadId, pending.toolName);
         deps.store.resolvePendingApproval(threadId, {
           behavior: 'allow',

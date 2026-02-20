@@ -296,6 +296,60 @@ describe('createInteractionHandler', () => {
       );
     });
 
+    it('always_allow button approves and adds tool to allowedTools', async () => {
+      const store = new StateStore();
+      store.setSession('t1', {
+        sessionId: null,
+        status: 'awaiting_permission',
+        threadId: 't1',
+        userId: 'user1',
+        startedAt: new Date(),
+        lastActivityAt: new Date(),
+        promptText: 'test',
+        cwd: '/test',
+        model: 'model',
+        toolCount: 0,
+        tools: {},
+        pendingApproval: null,
+        abortController: new AbortController(),
+        transcript: [],
+        allowedTools: new Set(),
+      });
+
+      const resolveResult = vi.fn();
+      store.setPendingApproval('t1', {
+        toolName: 'Bash',
+        toolInput: { command: 'ls' },
+        messageId: 'msg-1',
+        resolve: resolveResult,
+        createdAt: new Date(),
+      });
+
+      const deps = makeDeps(store);
+      const handler = createInteractionHandler(deps);
+      const interaction = makeButtonInteraction('always_allow:t1');
+      await handler(interaction as never);
+
+      expect(resolveResult).toHaveBeenCalledWith(
+        expect.objectContaining({ behavior: 'allow' }),
+      );
+      expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: '🔓 Always allowed: Bash (for this session)' }),
+      );
+      // Verify tool was added to allowedTools
+      expect(store.isToolAllowed('t1', 'Bash')).toBe(true);
+    });
+
+    it('always_allow replies expired when no pending request', async () => {
+      const deps = makeDeps();
+      const handler = createInteractionHandler(deps);
+      const interaction = makeButtonInteraction('always_allow:t1');
+      await handler(interaction as never);
+      expect((interaction as Record<string, unknown>).reply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: '⚠️ This request has expired' }),
+      );
+    });
+
     it('confirm_stop executes stop', async () => {
       const store = new StateStore();
       store.setSession('t1', {
