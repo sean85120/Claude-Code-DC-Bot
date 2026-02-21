@@ -153,10 +153,16 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
 
       if (customId.startsWith('approve:')) {
         const threadId = customId.slice('approve:'.length);
+        const session = deps.store.getSession(threadId);
         const pending = deps.store.getPendingApproval(threadId);
 
         if (!pending) {
           await interaction.reply({ content: '⚠️ This request has expired', flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        if (session && session.userId !== interaction.user.id) {
+          await interaction.reply({ content: '❌ Only the session owner can approve tools.', flags: [MessageFlags.Ephemeral] });
           return;
         }
 
@@ -169,12 +175,47 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
         return;
       }
 
-      if (customId.startsWith('deny:')) {
-        const threadId = customId.slice('deny:'.length);
+      if (customId.startsWith('always_allow:')) {
+        const threadId = customId.slice('always_allow:'.length);
+        const session = deps.store.getSession(threadId);
         const pending = deps.store.getPendingApproval(threadId);
 
         if (!pending) {
           await interaction.reply({ content: '⚠️ This request has expired', flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        if (session && session.userId !== interaction.user.id) {
+          await interaction.reply({ content: '❌ Only the session owner can approve tools.', flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        log.info({ threadId, tool: pending.toolName, userId: interaction.user.id }, 'Always-allow granted');
+        deps.store.addAllowedTool(threadId, pending.toolName);
+        deps.store.resolvePendingApproval(threadId, {
+          behavior: 'allow',
+          updatedInput: pending.toolInput,
+        });
+
+        await interaction.reply({
+          content: `🔓 Always allowed: ${pending.toolName} (for this session)`,
+          flags: [MessageFlags.Ephemeral],
+        });
+        return;
+      }
+
+      if (customId.startsWith('deny:')) {
+        const threadId = customId.slice('deny:'.length);
+        const session = deps.store.getSession(threadId);
+        const pending = deps.store.getPendingApproval(threadId);
+
+        if (!pending) {
+          await interaction.reply({ content: '⚠️ This request has expired', flags: [MessageFlags.Ephemeral] });
+          return;
+        }
+
+        if (session && session.userId !== interaction.user.id) {
+          await interaction.reply({ content: '❌ Only the session owner can approve tools.', flags: [MessageFlags.Ephemeral] });
           return;
         }
 
@@ -273,6 +314,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
             pendingApproval: null,
             abortController,
             transcript: [{ timestamp: new Date(), type: 'user', content: promptText.slice(0, 2000) }],
+            allowedTools: new Set(),
           };
 
           deps.store.setSession(threadId, session);

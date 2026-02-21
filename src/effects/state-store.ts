@@ -90,6 +90,23 @@ export class StateStore {
   }
 
   /**
+   * Add a tool to the session's always-allowed set
+   */
+  addAllowedTool(threadId: string, toolName: string): void {
+    const session = this.sessions.get(threadId);
+    if (!session) return;
+    session.allowedTools.add(toolName);
+  }
+
+  /**
+   * Check if a tool is always-allowed for this session
+   */
+  isToolAllowed(threadId: string, toolName: string): boolean {
+    const session = this.sessions.get(threadId);
+    return session?.allowedTools.has(toolName) ?? false;
+  }
+
+  /**
    * Get all active sessions (excluding completed and error statuses)
    * @returns Map of threadId to SessionState
    */

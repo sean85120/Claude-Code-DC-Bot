@@ -303,6 +303,7 @@ async function handleRun(
     pendingApproval: null,
     abortController,
     transcript: [{ timestamp: new Date(), type: 'user', content: message.slice(0, 2000) }],
+    allowedTools: new Set(),
   };
 
   store.setSession(thread.id, session);

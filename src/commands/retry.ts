@@ -77,6 +77,7 @@ export async function execute(
     pendingApproval: null,
     abortController: newAbortController,
     transcript: [],
+    allowedTools: new Set(),
   };
 
   store.setSession(threadId, newSession);

@@ -223,6 +223,7 @@ export async function execute(
     pendingApproval: null,
     abortController,
     transcript: [],
+    allowedTools: new Set(),
   };
 
   // Record initial user message to transcript

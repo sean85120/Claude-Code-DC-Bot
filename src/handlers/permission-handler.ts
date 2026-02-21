@@ -88,6 +88,13 @@ export function createCanUseTool(deps: PermissionHandlerDeps): CanUseTool {
   return async (toolName, input, options) => {
     const { store, threadId, thread, cwd, approvalTimeoutMs } = deps;
 
+    // Auto-approve if this tool has been always-allowed for this session
+    // (skip AskUserQuestion/AskUser — these need interactive answers)
+    if (store.isToolAllowed(threadId, toolName) && toolName !== 'AskUserQuestion' && toolName !== 'AskUser') {
+      log.info({ threadId, tool: toolName }, 'Auto-approved (always allow)');
+      return { behavior: 'allow' as const, updatedInput: input };
+    }
+
     log.info({ threadId, tool: toolName }, 'Awaiting permission approval');
 
     // AskUserQuestion special handling: display option buttons one question at a time, supporting multi-select and multiple questions
