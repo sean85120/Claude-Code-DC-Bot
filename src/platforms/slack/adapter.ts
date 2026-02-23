@@ -35,8 +35,9 @@ export class SlackAdapter implements PlatformAdapter {
   private buttonHandler?: (interaction: PlatformInteraction) => Promise<void>;
   private threadMessageHandler?: (interaction: PlatformInteraction) => Promise<void>;
 
-  /** Map of message ts → { channel, ts } for editing/deleting */
+  /** Map of message ts → { channel, ts } for editing/deleting. Bounded to prevent memory leaks. */
   private messageCache = new Map<string, { channel: string; ts: string }>();
+  private static readonly MAX_CACHE_SIZE = 500;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -124,7 +125,8 @@ export class SlackAdapter implements PlatformAdapter {
       channel: channelId,
       text: name,
     });
-    const ts = result.ts!;
+    const ts = result.ts;
+    if (!ts) throw new Error('Slack API did not return a message timestamp');
     return `${channelId}:${ts}`;
   }
 
@@ -139,8 +141,9 @@ export class SlackAdapter implements PlatformAdapter {
         thread_ts,
         text: chunk,
       });
-      const ts = result.ts!;
+      const ts = result.ts ?? `${Date.now()}`;
       this.messageCache.set(ts, { channel, ts });
+      this.evictCacheIfNeeded();
       messages.push({ id: ts, threadId, platform: 'slack' });
     }
     return messages;
@@ -158,8 +161,9 @@ export class SlackAdapter implements PlatformAdapter {
       blocks,
     });
 
-    const ts = result.ts!;
+    const ts = result.ts ?? `${Date.now()}`;
     this.messageCache.set(ts, { channel, ts });
+    this.evictCacheIfNeeded();
     return { id: ts, threadId, platform: 'slack' };
   }
 
@@ -181,8 +185,9 @@ export class SlackAdapter implements PlatformAdapter {
       blocks,
     });
 
-    const ts = result.ts!;
+    const ts = result.ts ?? `${Date.now()}`;
     this.messageCache.set(ts, { channel, ts });
+    this.evictCacheIfNeeded();
     return { id: ts, threadId, platform: 'slack' };
   }
 
@@ -252,10 +257,23 @@ export class SlackAdapter implements PlatformAdapter {
   }
 
   async editDeferredReply(interaction: PlatformInteraction, text: string): Promise<void> {
-    // Post the response in the channel/thread as a regular message
+    // Use response_url to update the original slash command response
     const raw = interaction.raw;
-    if (raw && typeof raw === 'object' && 'channel_id' in raw) {
+    if (raw && typeof raw === 'object' && 'response_url' in raw) {
       const cmd = raw as SlashCommand;
+      if (cmd.response_url) {
+        try {
+          await fetch(cmd.response_url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, replace_original: true }),
+          });
+          return;
+        } catch {
+          // Fall through to postMessage
+        }
+      }
+      // Fallback: post as regular message
       await this.app.client.chat.postMessage({
         channel: cmd.channel_id,
         text,
@@ -337,12 +355,24 @@ export class SlackAdapter implements PlatformAdapter {
       thread_ts,
       text,
     });
-    const ts = result.ts!;
+    const ts = result.ts ?? `${Date.now()}`;
     this.messageCache.set(ts, { channel, ts });
+    this.evictCacheIfNeeded();
     return { id: ts, threadId, platform: 'slack' };
   }
 
   // ─── Internal Helpers ─────────────────────────────
+
+  /** Evict oldest entries when cache exceeds max size */
+  private evictCacheIfNeeded(): void {
+    if (this.messageCache.size <= SlackAdapter.MAX_CACHE_SIZE) return;
+    const excess = this.messageCache.size - SlackAdapter.MAX_CACHE_SIZE;
+    const keys = this.messageCache.keys();
+    for (let i = 0; i < excess; i++) {
+      const key = keys.next().value;
+      if (key) this.messageCache.delete(key);
+    }
+  }
 
   private slashCommandToPI(command: SlashCommand): PlatformInteraction {
     // Map slash command name to a unified command name

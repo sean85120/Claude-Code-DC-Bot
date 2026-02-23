@@ -301,6 +301,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           const abortController = new AbortController();
           const session: SessionState = {
             sessionId: null,
+            platform: 'discord',
             status: 'running',
             threadId,
             userId: interaction.user.id,

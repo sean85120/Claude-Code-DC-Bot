@@ -104,6 +104,8 @@ export interface SessionState {
   status: SessionStatus;
   threadId: string;
   userId: string;
+  /** Platform that owns this session */
+  platform: import('./platforms/types.js').PlatformType;
   startedAt: Date;
   lastActivityAt: Date;
   promptText: string;

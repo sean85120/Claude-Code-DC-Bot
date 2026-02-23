@@ -128,6 +128,7 @@ async function runSchedule(schedule: ScheduledPrompt, deps: ScheduleRunnerDeps):
     const abortController = new AbortController();
     const session: SessionState = {
       sessionId: null,
+      platform: 'discord',
       status: 'running',
       threadId: thread.id,
       userId: schedule.createdBy,

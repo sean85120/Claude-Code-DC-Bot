@@ -218,6 +218,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'awaiting_permission',
         threadId: 't1',
         userId: 'user1',
@@ -271,6 +272,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'awaiting_permission',
         threadId: 't1',
         userId: 'user1',
@@ -313,6 +315,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'awaiting_permission',
         threadId: 't1',
         userId: 'user1',
@@ -367,6 +370,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'running',
         threadId: 't1',
         userId: 'u1',
@@ -569,6 +573,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'running',
         threadId: 't1',
         userId: 'u1',

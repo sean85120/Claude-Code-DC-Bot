@@ -35,11 +35,9 @@ export class DiscordAdapter implements PlatformAdapter {
   private buttonHandler?: (interaction: PlatformInteraction) => Promise<void>;
   private threadMessageHandler?: (interaction: PlatformInteraction) => Promise<void>;
 
-  /** Map of message IDs to raw Discord Message objects (for editing/deleting) */
+  /** Map of message IDs to raw Discord Message objects (for editing/deleting). Bounded to prevent memory leaks. */
   private messageCache = new Map<string, Message>();
-
-  /** Map of interaction IDs to raw Discord Interaction objects (for ephemeral replies) */
-  private interactionCache = new Map<string, Interaction>();
+  private static readonly MAX_CACHE_SIZE = 500;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -62,10 +60,6 @@ export class DiscordAdapter implements PlatformAdapter {
 
     this.client.on('interactionCreate', async (interaction) => {
       try {
-        // Store raw interaction for ephemeral replies
-        const interactionId = interaction.id;
-        this.interactionCache.set(interactionId, interaction);
-
         if (interaction.isChatInputCommand()) {
           if (this.commandHandler) {
             const platformInteraction = this.discordInteractionToPI(interaction);
@@ -142,6 +136,7 @@ export class DiscordAdapter implements PlatformAdapter {
     for (const chunk of chunks) {
       const msg = await thread.send(chunk);
       this.messageCache.set(msg.id, msg);
+      this.evictCacheIfNeeded();
       messages.push({ id: msg.id, threadId, platform: 'discord' });
     }
     return messages;
@@ -152,6 +147,7 @@ export class DiscordAdapter implements PlatformAdapter {
     const embed = richMessageToEmbed(message);
     const msg = await thread.send({ embeds: [embed] });
     this.messageCache.set(msg.id, msg);
+    this.evictCacheIfNeeded();
     return { id: msg.id, threadId, platform: 'discord' };
   }
 
@@ -165,6 +161,7 @@ export class DiscordAdapter implements PlatformAdapter {
     const rows = actionButtonsToRows(buttons);
     const msg = await thread.send({ embeds: [embed], components: rows });
     this.messageCache.set(msg.id, msg);
+    this.evictCacheIfNeeded();
     return { id: msg.id, threadId, platform: 'discord' };
   }
 
@@ -259,10 +256,22 @@ export class DiscordAdapter implements PlatformAdapter {
     const thread = await this.getThread(threadId);
     const msg = await thread.send(text);
     this.messageCache.set(msg.id, msg);
+    this.evictCacheIfNeeded();
     return { id: msg.id, threadId, platform: 'discord' };
   }
 
   // ─── Internal Helpers ─────────────────────────────
+
+  /** Evict oldest entries when cache exceeds max size */
+  private evictCacheIfNeeded(): void {
+    if (this.messageCache.size <= DiscordAdapter.MAX_CACHE_SIZE) return;
+    const excess = this.messageCache.size - DiscordAdapter.MAX_CACHE_SIZE;
+    const keys = this.messageCache.keys();
+    for (let i = 0; i < excess; i++) {
+      const key = keys.next().value;
+      if (key) this.messageCache.delete(key);
+    }
+  }
 
   private async getThread(threadId: string): Promise<ThreadChannel> {
     const channel = await this.client.channels.fetch(threadId);
@@ -281,6 +290,7 @@ export class DiscordAdapter implements PlatformAdapter {
     const thread = await this.getThread(ref.threadId);
     const msg = await thread.messages.fetch(ref.id);
     this.messageCache.set(ref.id, msg);
+    this.evictCacheIfNeeded();
     return msg;
   }
 

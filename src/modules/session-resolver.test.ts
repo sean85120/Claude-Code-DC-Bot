@@ -16,6 +16,7 @@ function makeStoreWithSessions(threadIds: string[]): StateStore {
   for (const id of threadIds) {
     store.setSession(id, {
       sessionId: null,
+      platform: 'discord',
       status: 'running',
       threadId: id,
       userId: 'u1',

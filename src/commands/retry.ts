@@ -65,6 +65,7 @@ export async function execute(
   const newAbortController = new AbortController();
   const newSession: SessionState = {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId,
     userId: session.userId,

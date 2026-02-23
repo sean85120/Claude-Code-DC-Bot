@@ -31,6 +31,7 @@ import type { GlobalUsageStats } from '../effects/usage-store.js';
 function makeSession(overrides?: Partial<SessionState>): SessionState {
   return {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId: 't1',
     userId: 'u1',

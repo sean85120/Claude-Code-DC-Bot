@@ -211,6 +211,7 @@ export async function execute(
   const abortController = new AbortController();
   const session: SessionState = {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId: thread.id,
     userId: interaction.user.id,

@@ -24,6 +24,7 @@ function makeMockAdapter() {
 function makeSession(threadId: string, store: StateStore) {
   store.setSession(threadId, {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId,
     userId: 'u1',

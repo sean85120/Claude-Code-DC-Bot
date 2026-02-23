@@ -29,11 +29,14 @@ import { startSummaryScheduler } from './handlers/summary-scheduler.js';
 import { startScheduleRunner } from './handlers/schedule-runner.js';
 import { buildRecoveryEmbed, buildGitSummaryEmbed, buildBudgetWarningEmbed } from './modules/embeds.js';
 import { getGitDiffSummary } from './effects/git-bridge.js';
-import type { PlatformAdapter } from './platforms/types.js';
+import type { PlatformAdapter, PlatformType } from './platforms/types.js';
 import { DiscordAdapter } from './platforms/discord/index.js';
 import { SlackAdapter } from './platforms/slack/index.js';
 import { WhatsAppAdapter } from './platforms/whatsapp/index.js';
 import { WhatsAppSessionTracker } from './platforms/whatsapp/session-tracker.js';
+import { handleApprovalButton, createSessionFromPrompt } from './handlers/platform-handlers.js';
+import { isUserAuthorized } from './modules/permissions.js';
+import { checkRateLimit, recordRequest } from './modules/rate-limiter.js';
 
 // Load .env
 loadEnv();
@@ -263,13 +266,23 @@ async function main() {
     }
   }
 
+  // Map platform type → adapter for session-based routing
+  const adaptersByPlatform = new Map<PlatformType, PlatformAdapter>();
+  if (discordAdapter) adaptersByPlatform.set('discord', discordAdapter);
+  if (slackAdapter) adaptersByPlatform.set('slack', slackAdapter);
+  if (whatsappAdapter) adaptersByPlatform.set('whatsapp', whatsappAdapter);
+
   // Helper: determine which adapter owns a thread ID
   function getAdapterForThread(threadId: string): PlatformAdapter {
-    // WhatsApp thread IDs start with 'wa:'
+    // First, check if there's a session with an explicit platform
+    const session = store.getSession(threadId);
+    if (session) {
+      const adapter = adaptersByPlatform.get(session.platform);
+      if (adapter) return adapter;
+    }
+    // Fallback heuristics for threads not yet in the store (e.g., recovery)
     if (whatsappAdapter && WhatsAppSessionTracker.isWhatsAppThread(threadId)) return whatsappAdapter;
-    // Slack thread IDs contain a colon (channelId:thread_ts)
-    if (slackAdapter && threadId.includes(':')) return slackAdapter;
-    // Default: Discord
+    if (slackAdapter && threadId.includes(':') && !threadId.startsWith('wa:')) return slackAdapter;
     return primaryAdapter;
   }
 
@@ -417,56 +430,37 @@ async function main() {
   // ─── Initialize Slack ──────────────────────────────
 
   if (slackAdapter) {
-    // Create Thread message handler for Slack
     const slackThreadMessageHandler = createThreadMessageHandler({
-      config,
-      store,
-      adapter: slackAdapter,
-      startClaudeQuery,
+      config, store, adapter: slackAdapter, startClaudeQuery,
     });
 
     slackAdapter.onThreadMessage(async (pi) => {
       await slackThreadMessageHandler(pi);
     });
 
-    // Button interactions (approve/deny/always-allow) are handled via the adapter
     slackAdapter.onButtonClick(async (pi) => {
-      if (!pi.actionId) return;
-
-      // Route approval buttons
-      if (pi.actionId.startsWith('approve:') || pi.actionId.startsWith('deny:') || pi.actionId.startsWith('always_allow:')) {
-        const prefix = pi.actionId.split(':')[0] + ':';
-        const threadId = pi.actionId.slice(prefix.length);
-        const session = store.getSession(threadId);
-        const pending = store.getPendingApproval(threadId);
-
-        if (!pending) return;
-        if (session && session.userId !== pi.userId) return;
-
-        if (pi.actionId.startsWith('approve:')) {
-          store.resolvePendingApproval(threadId, { behavior: 'allow', updatedInput: pending.toolInput });
-        } else if (pi.actionId.startsWith('always_allow:')) {
-          store.addAllowedTool(threadId, pending.toolName);
-          store.resolvePendingApproval(threadId, { behavior: 'allow', updatedInput: pending.toolInput });
-        } else {
-          store.resolvePendingApproval(threadId, { behavior: 'deny', message: 'User denied via button' });
-        }
-        return;
-      }
-
-      // AskUserQuestion buttons
-      if (pi.actionId.startsWith('ask:') || pi.actionId.startsWith('ask_submit:') || pi.actionId.startsWith('ask_other:')) {
-        // For now, these are handled the same way as Discord through the pending approval mechanism
-        // Full AskUserQuestion support for Slack can be expanded later
-        return;
-      }
+      handleApprovalButton(pi, store);
     });
 
-    // Slash commands are mapped to the unified command interface
     slackAdapter.onCommand(async (pi) => {
       if (!pi.commandName) return;
-      // For now, slash commands require the interaction handler which is Discord-specific.
-      // Basic /claude-prompt support:
+
+      // Authorization check (Fix #6)
+      if (!isUserAuthorized(pi.userId, config.allowedUserIds)) {
+        await slackAdapter!.replyEphemeral(pi, 'You are not authorized to use this bot.');
+        return;
+      }
+
+      // Rate limiting (Fix #15)
+      const now = Date.now();
+      const rateEntry = rateLimitStore.getEntry(pi.userId);
+      const rateCheck = checkRateLimit(rateEntry, { windowMs: config.rateLimitWindowMs, maxRequests: config.rateLimitMaxRequests }, now);
+      if (!rateCheck.allowed) {
+        await slackAdapter!.replyEphemeral(pi, `Rate limited. Try again in ${Math.ceil((rateCheck.retryAfterMs ?? 0) / 1000)}s.`);
+        return;
+      }
+      rateLimitStore.setEntry(pi.userId, recordRequest(rateEntry, now, config.rateLimitWindowMs));
+
       if (pi.commandName === 'prompt') {
         const text = (pi.commandArgs?.text as string) ?? '';
         if (!text) {
@@ -474,46 +468,20 @@ async function main() {
           return;
         }
 
-        // Create a thread for this prompt
         const raw = pi.raw as { channel_id?: string };
         const channelId = raw.channel_id ?? '';
         if (!channelId) return;
 
         const threadId = await slackAdapter!.createThread(channelId, truncate(text, 60));
 
-        const abortController = new AbortController();
-        const session: SessionState = {
-          sessionId: null,
-          status: 'running',
-          threadId,
-          userId: pi.userId,
-          startedAt: new Date(),
-          lastActivityAt: new Date(),
-          promptText: text,
-          cwd: config.defaultCwd,
-          model: config.defaultModel,
-          toolCount: 0,
-          tools: {},
-          pendingApproval: null,
-          abortController,
-          transcript: [{ timestamp: new Date(), type: 'user', content: text.slice(0, 2000) }],
-          allowedTools: new Set(),
-        };
-
-        store.setSession(threadId, session);
-        const { buildSessionStartEmbed } = await import('./modules/embeds.js');
-        await slackAdapter!.sendRichMessage(threadId, buildSessionStartEmbed(text, config.defaultCwd, config.defaultModel));
-
-        startClaudeQuery(session, threadId).catch(async (error) => {
-          log.error({ err: error, threadId }, 'Slack prompt error');
-          store.clearSession(threadId);
+        await createSessionFromPrompt({
+          adapter: slackAdapter!, platform: 'slack', store, config,
+          threadId, userId: pi.userId, promptText: text, startClaudeQuery,
         });
       } else if (pi.commandName === 'stop') {
-        // Find active session in the channel context
         await slackAdapter!.replyEphemeral(pi, 'Use /claude-stop in a thread to stop a running session.');
       } else if (pi.commandName === 'status') {
-        const sessions = store.getAllActiveSessions();
-        const count = sessions.size;
+        const count = store.getAllActiveSessions().size;
         await slackAdapter!.replyEphemeral(pi, `Active sessions: ${count}`);
       }
     });
@@ -538,37 +506,31 @@ async function main() {
       await waThreadHandler(pi);
     });
 
-    // Button interactions (numbered replies for approve/deny)
+    // Button interactions (numbered replies for approve/deny) — uses shared handler
     whatsappAdapter.onButtonClick(async (pi) => {
-      if (!pi.actionId) return;
-
-      if (pi.actionId.startsWith('approve:') || pi.actionId.startsWith('deny:') || pi.actionId.startsWith('always_allow:')) {
-        const prefix = pi.actionId.split(':')[0] + ':';
-        const threadId = pi.actionId.slice(prefix.length);
-        const session = store.getSession(threadId);
-        const pending = store.getPendingApproval(threadId);
-
-        if (!pending) return;
-        if (session && session.userId !== pi.userId) return;
-
-        if (pi.actionId.startsWith('approve:')) {
-          store.resolvePendingApproval(threadId, { behavior: 'allow', updatedInput: pending.toolInput });
-          await whatsappAdapter!.sendText(threadId, 'Approved');
-        } else if (pi.actionId.startsWith('always_allow:')) {
-          store.addAllowedTool(threadId, pending.toolName);
-          store.resolvePendingApproval(threadId, { behavior: 'allow', updatedInput: pending.toolInput });
-          await whatsappAdapter!.sendText(threadId, `Always allowed: ${pending.toolName}`);
-        } else {
-          store.resolvePendingApproval(threadId, { behavior: 'deny', message: 'User denied' });
-          await whatsappAdapter!.sendText(threadId, 'Denied');
-        }
-        return;
-      }
+      handleApprovalButton(pi, store);
     });
 
     // Text commands (/prompt, /stop, /status)
     whatsappAdapter.onCommand(async (pi) => {
       if (!pi.commandName) return;
+
+      // Authorization check — WhatsApp adapter already filters by allowed numbers,
+      // but also check against the shared allowedUserIds list if configured.
+      if (config.allowedUserIds.length > 0 && !isUserAuthorized(pi.userId, config.allowedUserIds)) {
+        await whatsappAdapter!.sendText(pi.threadId, 'You are not authorized to use this bot.');
+        return;
+      }
+
+      // Rate limiting
+      const now = Date.now();
+      const rateEntry = rateLimitStore.getEntry(pi.userId);
+      const rateCheck = checkRateLimit(rateEntry, { windowMs: config.rateLimitWindowMs, maxRequests: config.rateLimitMaxRequests }, now);
+      if (!rateCheck.allowed) {
+        await whatsappAdapter!.sendText(pi.threadId, `Rate limited. Try again in ${Math.ceil((rateCheck.retryAfterMs ?? 0) / 1000)}s.`);
+        return;
+      }
+      rateLimitStore.setEntry(pi.userId, recordRequest(rateEntry, now, config.rateLimitWindowMs));
 
       if (pi.commandName === 'prompt') {
         const text = (pi.commandArgs?.text as string) ?? '';
@@ -580,33 +542,9 @@ async function main() {
         const chatId = WhatsAppSessionTracker.extractChatId(pi.threadId);
         const threadId = waSessionTracker.createSession(chatId);
 
-        const abortController = new AbortController();
-        const session: SessionState = {
-          sessionId: null,
-          status: 'running',
-          threadId,
-          userId: pi.userId,
-          startedAt: new Date(),
-          lastActivityAt: new Date(),
-          promptText: text,
-          cwd: config.defaultCwd,
-          model: config.defaultModel,
-          toolCount: 0,
-          tools: {},
-          pendingApproval: null,
-          abortController,
-          transcript: [{ timestamp: new Date(), type: 'user', content: text.slice(0, 2000) }],
-          allowedTools: new Set(),
-        };
-
-        store.setSession(threadId, session);
-        const { buildSessionStartEmbed } = await import('./modules/embeds.js');
-        await whatsappAdapter!.sendRichMessage(threadId, buildSessionStartEmbed(text, config.defaultCwd, config.defaultModel));
-
-        startClaudeQuery(session, threadId).catch(async (error) => {
-          log.error({ err: error, threadId }, 'WhatsApp prompt error');
-          store.clearSession(threadId);
-          waSessionTracker.removeSession(chatId);
+        await createSessionFromPrompt({
+          adapter: whatsappAdapter!, platform: 'whatsapp', store, config,
+          threadId, userId: pi.userId, promptText: text, startClaudeQuery,
         });
       } else if (pi.commandName === 'stop') {
         const chatId = WhatsAppSessionTracker.extractChatId(pi.threadId);

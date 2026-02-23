@@ -55,11 +55,12 @@ export function parseNumberedReply(text: string, buttonCount: number): number {
     return num - 1;
   }
 
-  // Try matching common approval/denial words
+  // Try matching common approval/denial words.
+  // Convention: buttons are ordered [Approve, Always Allow, Deny] — index 0 is approve,
+  // last index is deny. This matches the button order in permission-handler.ts.
   const lower = trimmed.toLowerCase();
   if (lower === 'approve' || lower === 'yes' || lower === 'y') return 0;
   if (lower === 'deny' || lower === 'no' || lower === 'n') {
-    // Deny is typically the last button
     return buttonCount - 1;
   }
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import WAWebJS from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import type { BotConfig, FileAttachment } from '../../types.js';
@@ -18,12 +19,6 @@ const log = logger.child({ module: 'WhatsAppAdapter' });
 
 const { Client: WAClient, LocalAuth } = WAWebJS;
 
-/** Pending approval buttons state for a thread */
-interface PendingButtons {
-  buttons: ActionButton[];
-  threadId: string;
-}
-
 /** WhatsApp implementation of PlatformAdapter */
 export class WhatsAppAdapter implements PlatformAdapter {
   readonly platform: PlatformType = 'whatsapp';
@@ -36,11 +31,11 @@ export class WhatsAppAdapter implements PlatformAdapter {
   private buttonHandler?: (interaction: PlatformInteraction) => Promise<void>;
   private threadMessageHandler?: (interaction: PlatformInteraction) => Promise<void>;
 
-  /** Track pending button selections per chat */
-  private pendingButtons = new Map<string, PendingButtons>();
-
-  /** Message counter for generating IDs */
-  private messageCounter = 0;
+  /**
+   * Track pending button selections per threadId.
+   * Keyed by threadId (not chatId) to avoid cross-session conflicts.
+   */
+  private pendingButtons = new Map<string, ActionButton[]>();
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -120,8 +115,8 @@ export class WhatsAppAdapter implements PlatformAdapter {
 
     await this.client.sendMessage(chatId, combined);
 
-    // Store pending buttons so we can match numbered replies
-    this.pendingButtons.set(chatId, { buttons, threadId });
+    // Store pending buttons so we can match numbered replies (keyed by threadId)
+    this.pendingButtons.set(threadId, buttons);
 
     const id = this.nextMessageId();
     return { id, threadId, platform: 'whatsapp' };
@@ -231,7 +226,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
   // ─── Internal ─────────────────────────────
 
   private nextMessageId(): string {
-    return `wa-msg-${++this.messageCounter}`;
+    return `wa-msg-${randomUUID().slice(0, 8)}`;
   }
 
   private isAllowedNumber(chatId: string): boolean {
@@ -254,17 +249,19 @@ export class WhatsAppAdapter implements PlatformAdapter {
     const body = message.body.trim();
     if (!body && !message.hasMedia) return;
 
-    // Check if this is a numbered reply to pending buttons
-    const pending = this.pendingButtons.get(chatId);
-    if (pending && this.buttonHandler) {
-      const idx = parseNumberedReply(body, pending.buttons.length);
+    // Check if this is a numbered reply to pending buttons (keyed by threadId)
+    const activeThreadId = this.sessionTracker.getActiveThreadId(chatId);
+    const pendingThreadId = activeThreadId ?? chatId;
+    const pendingButtons = this.pendingButtons.get(pendingThreadId);
+    if (pendingButtons && this.buttonHandler) {
+      const idx = parseNumberedReply(body, pendingButtons.length);
       if (idx >= 0) {
-        const button = pending.buttons[idx];
-        this.pendingButtons.delete(chatId);
+        const button = pendingButtons[idx];
+        this.pendingButtons.delete(pendingThreadId);
 
         const pi: PlatformInteraction = {
           userId: chatId,
-          threadId: pending.threadId,
+          threadId: pendingThreadId,
           platform: 'whatsapp',
           actionId: button.id,
           raw: message,
@@ -277,7 +274,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
     // Check if this is a text command
     const cmd = parseTextCommand(body);
     if (cmd && this.commandHandler) {
-      const threadId = this.sessionTracker.getActiveThreadId(chatId) ?? chatId;
+      const threadId = activeThreadId ?? chatId;
       const pi: PlatformInteraction = {
         userId: chatId,
         threadId,
@@ -291,7 +288,6 @@ export class WhatsAppAdapter implements PlatformAdapter {
     }
 
     // Otherwise, treat as a follow-up message to the active session
-    const activeThreadId = this.sessionTracker.getActiveThreadId(chatId);
     if (activeThreadId && this.threadMessageHandler) {
       const pi: PlatformInteraction = {
         userId: chatId,

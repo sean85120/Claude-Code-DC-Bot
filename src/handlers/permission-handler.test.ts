@@ -23,6 +23,7 @@ function makeStore(threadId: string, userId = 'u1'): StateStore {
   const store = new StateStore();
   store.setSession(threadId, {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId,
     userId,

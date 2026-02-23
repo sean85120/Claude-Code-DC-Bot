@@ -5,6 +5,7 @@ import type { SessionState, PendingApproval } from '../types.js';
 function makeSession(overrides?: Partial<SessionState>): SessionState {
   return {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId: 'thread-1',
     userId: 'user-1',
