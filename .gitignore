@@ -9,3 +9,5 @@ CLAUDE.md
 coverage
 daily-summary.json
 queued-sessions.json
+active-sessions.json
+.DS_Store
