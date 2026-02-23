@@ -231,9 +231,9 @@ export class WhatsAppAdapter implements PlatformAdapter {
 
   private isAllowedNumber(chatId: string): boolean {
     if (this.config.whatsappAllowedNumbers.length === 0) return true;
-    // chatId format: number@c.us
+    // chatId format: number@c.us (e.g., 14155551234@c.us)
     const number = chatId.replace('@c.us', '');
-    return this.config.whatsappAllowedNumbers.some((n) => number.endsWith(n));
+    return this.config.whatsappAllowedNumbers.some((n) => number === n);
   }
 
   private async handleIncomingMessage(message: WAWebJS.Message): Promise<void> {

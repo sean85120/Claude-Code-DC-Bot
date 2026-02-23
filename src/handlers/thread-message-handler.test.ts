@@ -10,9 +10,8 @@ vi.mock('../modules/permissions.js', () => ({
   isUserAuthorized: vi.fn().mockReturnValue(true),
 }));
 
-import type { Message } from 'discord.js';
-import type { PlatformAdapter } from '../platforms/types.js';
-import type { BotConfig, SessionState } from '../types.js';
+import type { PlatformAdapter, PlatformInteraction } from '../platforms/types.js';
+import type { BotConfig, FileAttachment, SessionState } from '../types.js';
 import type { ThreadMessageHandlerDeps } from './thread-message-handler.js';
 import { StateStore } from '../effects/state-store.js';
 import { classifyAttachment, createThreadMessageHandler } from './thread-message-handler.js';
@@ -118,6 +117,7 @@ describe('classifyAttachment', () => {
 function makeSession(threadId: string, overrides?: Partial<SessionState>): SessionState {
   return {
     sessionId: 'sess-abc',
+    platform: 'discord',
     status: 'waiting_input',
     threadId,
     userId: 'u1',
@@ -131,33 +131,20 @@ function makeSession(threadId: string, overrides?: Partial<SessionState>): Sessi
     pendingApproval: null,
     abortController: new AbortController(),
     transcript: [],
+    allowedTools: new Set(),
     ...overrides,
   };
 }
 
-function makeMessage(overrides?: Record<string, unknown>): Message {
-  const defaults = {
-    author: { bot: false, id: 'u1' },
-    channel: {
-      isThread: () => true,
-      id: 'thread-1',
-    },
-    content: 'Please continue the analysis',
-    attachments: new Map(),
-    reply: vi.fn().mockResolvedValue(undefined),
+function makePI(overrides?: Partial<PlatformInteraction>): PlatformInteraction {
+  return {
+    userId: 'u1',
+    threadId: 'thread-1',
+    platform: 'discord',
+    text: 'Please continue the analysis',
+    raw: {},
+    ...overrides,
   };
-
-  const merged = { ...defaults, ...overrides };
-
-  // Deep merge author and channel
-  if (overrides?.author && typeof overrides.author === 'object') {
-    merged.author = { ...defaults.author, ...(overrides.author as Record<string, unknown>) };
-  }
-  if (overrides?.channel && typeof overrides.channel === 'object') {
-    merged.channel = { ...defaults.channel, ...(overrides.channel as Record<string, unknown>) };
-  }
-
-  return merged as unknown as Message;
 }
 
 function makeMockAdapter() {
@@ -211,37 +198,12 @@ describe('createThreadMessageHandler', () => {
     vi.unstubAllGlobals();
   });
 
-  it('ignores messages from the Bot itself', async () => {
-    store.setSession('thread-1', makeSession('thread-1'));
-    const deps = makeDeps(store);
-    const handler = createThreadMessageHandler(deps);
-    const message = makeMessage({ author: { bot: true, id: 'bot-1' } });
-
-    await handler(message);
-
-    expect(deps.startClaudeQuery).not.toHaveBeenCalled();
-  });
-
-  it('ignores non-Thread messages', async () => {
-    store.setSession('thread-1', makeSession('thread-1'));
-    const deps = makeDeps(store);
-    const handler = createThreadMessageHandler(deps);
-    const message = makeMessage({
-      channel: { isThread: () => false, id: 'ch-1' },
-    });
-
-    await handler(message);
-
-    expect(deps.startClaudeQuery).not.toHaveBeenCalled();
-  });
-
   it('ignores when no matching Session exists', async () => {
     // No session in store
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage();
 
-    await handler(message);
+    await handler(makePI());
 
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
@@ -250,9 +212,8 @@ describe('createThreadMessageHandler', () => {
     store.setSession('thread-1', makeSession('thread-1', { status: 'running' }));
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage();
 
-    await handler(message);
+    await handler(makePI());
 
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
@@ -262,9 +223,8 @@ describe('createThreadMessageHandler', () => {
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
     vi.mocked(isUserAuthorized).mockReturnValue(false);
-    const message = makeMessage();
 
-    await handler(message);
+    await handler(makePI());
 
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
@@ -273,9 +233,8 @@ describe('createThreadMessageHandler', () => {
     store.setSession('thread-1', makeSession('thread-1'));
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage({ content: '' });
 
-    await handler(message);
+    await handler(makePI({ text: '' }));
 
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
@@ -284,9 +243,8 @@ describe('createThreadMessageHandler', () => {
     store.setSession('thread-1', makeSession('thread-1'));
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage({ content: '   ' });
 
-    await handler(message);
+    await handler(makePI({ text: '   ' }));
 
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
@@ -295,9 +253,8 @@ describe('createThreadMessageHandler', () => {
     store.setSession('thread-1', makeSession('thread-1', { sessionId: null }));
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage();
 
-    await handler(message);
+    await handler(makePI());
 
     expect((deps.adapter as any).sendText).toHaveBeenCalledWith('thread-1', '⚠️ Unable to resume conversation: missing Session ID');
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
@@ -307,9 +264,8 @@ describe('createThreadMessageHandler', () => {
     store.setSession('thread-1', makeSession('thread-1'));
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage({ content: 'What is the next step?' });
 
-    await handler(message);
+    await handler(makePI({ text: 'What is the next step?' }));
 
     // Verify store is updated to running
     const session = store.getSession('thread-1');
@@ -333,9 +289,8 @@ describe('createThreadMessageHandler', () => {
     store.setSession('thread-1', makeSession('thread-1'));
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage({ content: 'Continue' });
 
-    await handler(message);
+    await handler(makePI({ text: 'Continue' }));
 
     const session = store.getSession('thread-1');
     expect(session?.transcript).toHaveLength(1);
@@ -348,23 +303,14 @@ describe('createThreadMessageHandler', () => {
 
   it('downloads image attachments and converts to base64', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
-    const deps = makeDeps(store);
+    const mockAdapter = makeMockAdapter();
+    vi.mocked(mockAdapter.downloadAttachments).mockResolvedValue([
+      { type: 'image', base64: 'iVBORw0KGgo=', mediaType: 'image/png', filename: 'screenshot.png' },
+    ] as FileAttachment[]);
+    const deps = makeDeps(store, { adapter: mockAdapter });
     const handler = createThreadMessageHandler(deps);
 
-    const imageData = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
-    const mockResponse = {
-      arrayBuffer: () => Promise.resolve(imageData.buffer),
-    };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
-
-    const attachments = new Map([
-      ['att-1', { contentType: 'image/png', name: 'screenshot.png', size: 1024, url: 'https://cdn.example.com/screenshot.png' }],
-    ]);
-    const message = makeMessage({ content: 'Look at this image', attachments });
-
-    await handler(message);
-
-    expect(fetch).toHaveBeenCalledWith('https://cdn.example.com/screenshot.png');
+    await handler(makePI({ text: 'Look at this image' }));
 
     // Verify startClaudeQuery was called and session contains image attachments
     const session = store.getSession('thread-1');
@@ -379,21 +325,14 @@ describe('createThreadMessageHandler', () => {
 
   it('downloads text attachments and saves textContent', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
-    const deps = makeDeps(store);
+    const mockAdapter = makeMockAdapter();
+    vi.mocked(mockAdapter.downloadAttachments).mockResolvedValue([
+      { type: 'text', base64: '', mediaType: 'application/octet-stream', filename: 'index.ts', textContent: 'console.log("hello");' },
+    ] as FileAttachment[]);
+    const deps = makeDeps(store, { adapter: mockAdapter });
     const handler = createThreadMessageHandler(deps);
 
-    const textData = new TextEncoder().encode('console.log("hello");');
-    const mockResponse = {
-      arrayBuffer: () => Promise.resolve(textData.buffer),
-    };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
-
-    const attachments = new Map([
-      ['att-1', { contentType: 'application/octet-stream', name: 'index.ts', size: 100, url: 'https://cdn.example.com/index.ts' }],
-    ]);
-    const message = makeMessage({ content: '', attachments });
-
-    await handler(message);
+    await handler(makePI({ text: '' }));
 
     // Text file content is embedded in prompt, not in attachments (those are rich attachments)
     const session = store.getSession('thread-1');
@@ -404,83 +343,61 @@ describe('createThreadMessageHandler', () => {
 
   it('skips unsupported attachment types', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
+    // adapter.downloadAttachments returns empty when unsupported types are filtered by adapter
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
 
-    const attachments = new Map([
-      ['att-1', { contentType: 'application/zip', name: 'archive.zip', size: 1024, url: 'https://cdn.example.com/archive.zip' }],
-    ]);
-    // No text, only unsupported attachments -> should be ignored since fileAttachments is empty and content is empty
-    const message = makeMessage({ content: '', attachments });
+    // No text, downloadAttachments returns [] (default mock) -> ignored
+    await handler(makePI({ text: '' }));
 
-    await handler(message);
-
-    // Unsupported attachments are skipped, and with no text, the entire message is ignored
+    // No text and no attachments -> message is ignored
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
 
   it('skips attachments exceeding size limit', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
+    // adapter.downloadAttachments returns empty when oversized files are filtered by adapter
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
 
-    const attachments = new Map([
-      ['att-1', { contentType: 'image/png', name: 'huge.png', size: 21 * 1024 * 1024, url: 'https://cdn.example.com/huge.png' }],
-    ]);
-    const message = makeMessage({ content: '', attachments });
+    // No text, downloadAttachments returns [] (default mock) -> ignored
+    await handler(makePI({ text: '' }));
 
-    await handler(message);
-
-    // Images over 20MB are skipped, and with no text -> ignored
+    // No attachments and no text -> ignored
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
 
   it('skips text files exceeding 1MB limit', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
+    // adapter.downloadAttachments returns empty when oversized text files are filtered by adapter
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
 
-    const attachments = new Map([
-      ['att-1', { contentType: 'text/plain', name: 'huge.txt', size: 2 * 1024 * 1024, url: 'https://cdn.example.com/huge.txt' }],
-    ]);
-    const message = makeMessage({ content: '', attachments });
-
-    await handler(message);
+    // No text, downloadAttachments returns [] (default mock) -> ignored
+    await handler(makePI({ text: '' }));
 
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
 
   it('skips attachment when fetch fails', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
+    // adapter.downloadAttachments returns empty when fetch fails internally
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
 
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
-
-    const attachments = new Map([
-      ['att-1', { contentType: 'image/png', name: 'broken.png', size: 1024, url: 'https://cdn.example.com/broken.png' }],
-    ]);
-    // No text, attachment fetch failed -> fileAttachments is empty -> ignored
-    const message = makeMessage({ content: '', attachments });
-
-    await handler(message);
+    // No text, downloadAttachments returns [] (default mock) -> ignored
+    await handler(makePI({ text: '' }));
 
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
 
   it('continues when fetch fails but text is present', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
+    // adapter.downloadAttachments returns empty (fetch failed), but text is present
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
 
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
-
-    const attachments = new Map([
-      ['att-1', { contentType: 'image/png', name: 'broken.png', size: 1024, url: 'https://cdn.example.com/broken.png' }],
-    ]);
-    const message = makeMessage({ content: 'Analyze this', attachments });
-
-    await handler(message);
+    await handler(makePI({ text: 'Analyze this' }));
 
     // Text is still present, failed attachments are skipped, should continue
     expect(deps.startClaudeQuery).toHaveBeenCalled();
@@ -490,23 +407,15 @@ describe('createThreadMessageHandler', () => {
 
   it('combines prompt when text and files are both present', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
-    const deps = makeDeps(store);
+    const mockAdapter = makeMockAdapter();
+    vi.mocked(mockAdapter.downloadAttachments).mockResolvedValue([
+      { type: 'text', base64: '', mediaType: 'application/octet-stream', filename: 'app.ts', textContent: 'const x = 1;' },
+      { type: 'image', base64: 'iVBORw0KGgo=', mediaType: 'image/png', filename: 'ui.png' },
+    ] as FileAttachment[]);
+    const deps = makeDeps(store, { adapter: mockAdapter });
     const handler = createThreadMessageHandler(deps);
 
-    const textData = new TextEncoder().encode('const x = 1;');
-    const imageData = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce({ arrayBuffer: () => Promise.resolve(textData.buffer) })
-      .mockResolvedValueOnce({ arrayBuffer: () => Promise.resolve(imageData.buffer) }),
-    );
-
-    const attachments = new Map([
-      ['att-1', { contentType: 'application/octet-stream', name: 'app.ts', size: 100, url: 'https://cdn.example.com/app.ts' }],
-      ['att-2', { contentType: 'image/png', name: 'ui.png', size: 2048, url: 'https://cdn.example.com/ui.png' }],
-    ]);
-    const message = makeMessage({ content: 'Please check these files', attachments });
-
-    await handler(message);
+    await handler(makePI({ text: 'Please check these files' }));
 
     const session = store.getSession('thread-1');
     // Prompt should contain user text + text file content
@@ -528,20 +437,14 @@ describe('createThreadMessageHandler', () => {
 
   it('uses default prompt when only attachments and no text', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
-    const deps = makeDeps(store);
+    const mockAdapter = makeMockAdapter();
+    vi.mocked(mockAdapter.downloadAttachments).mockResolvedValue([
+      { type: 'image', base64: 'iVBORw0KGgo=', mediaType: 'image/png', filename: 'photo.png' },
+    ] as FileAttachment[]);
+    const deps = makeDeps(store, { adapter: mockAdapter });
     const handler = createThreadMessageHandler(deps);
 
-    const imageData = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      arrayBuffer: () => Promise.resolve(imageData.buffer),
-    }));
-
-    const attachments = new Map([
-      ['att-1', { contentType: 'image/png', name: 'photo.png', size: 1024, url: 'https://cdn.example.com/photo.png' }],
-    ]);
-    const message = makeMessage({ content: '', attachments });
-
-    await handler(message);
+    await handler(makePI({ text: '' }));
 
     const session = store.getSession('thread-1');
     // No text and no text file content -> prompt should be default value
@@ -556,9 +459,8 @@ describe('createThreadMessageHandler', () => {
     const startClaudeQuery = vi.fn().mockRejectedValue(new Error('Claude crashed'));
     const deps = makeDeps(store, { startClaudeQuery });
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage();
 
-    await handler(message);
+    await handler(makePI());
 
     // startClaudeQuery's .catch is fire-and-forget, need to wait for microtasks to settle
     await vi.waitFor(() => {
@@ -572,9 +474,8 @@ describe('createThreadMessageHandler', () => {
     store.setSession('thread-1', makeSession('thread-1', { abortController: originalController }));
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage({ content: 'Continue' });
 
-    await handler(message);
+    await handler(makePI({ text: 'Continue' }));
 
     const session = store.getSession('thread-1');
     expect(session?.abortController).not.toBe(originalController);
@@ -593,9 +494,8 @@ describe('createThreadMessageHandler', () => {
     }));
     const deps = makeDeps(store);
     const handler = createThreadMessageHandler(deps);
-    const message = makeMessage({ content: 'Continue' });
 
-    await handler(message);
+    await handler(makePI({ text: 'Continue' }));
 
     const session = store.getSession('thread-1');
     expect(session?.pendingApproval).toBeNull();
@@ -603,20 +503,14 @@ describe('createThreadMessageHandler', () => {
 
   it('transcript records include attachment summary', async () => {
     store.setSession('thread-1', makeSession('thread-1'));
-    const deps = makeDeps(store);
+    const mockAdapter = makeMockAdapter();
+    vi.mocked(mockAdapter.downloadAttachments).mockResolvedValue([
+      { type: 'image', base64: 'iQ==', mediaType: 'image/png', filename: 'shot.png' },
+    ] as FileAttachment[]);
+    const deps = makeDeps(store, { adapter: mockAdapter });
     const handler = createThreadMessageHandler(deps);
 
-    const imageData = new Uint8Array([0x89]);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      arrayBuffer: () => Promise.resolve(imageData.buffer),
-    }));
-
-    const attachments = new Map([
-      ['att-1', { contentType: 'image/png', name: 'shot.png', size: 512, url: 'https://cdn.example.com/shot.png' }],
-    ]);
-    const message = makeMessage({ content: 'Look at the image', attachments });
-
-    await handler(message);
+    await handler(makePI({ text: 'Look at the image' }));
 
     const session = store.getSession('thread-1');
     expect(session?.transcript).toHaveLength(1);

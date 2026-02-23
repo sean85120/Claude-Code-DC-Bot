@@ -1,5 +1,4 @@
-import type { Message } from 'discord.js';
-import type { BotConfig, SessionState, FileAttachment } from '../types.js';
+import type { BotConfig, SessionState } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import type { PlatformAdapter, PlatformInteraction } from '../platforms/types.js';
 import { logger } from '../effects/logger.js';
@@ -20,8 +19,6 @@ const SUPPORTED_TEXT_EXTENSIONS = [
   '.env', '.gitignore', '.dockerignore', '.editorconfig',
   '.dockerfile',
 ];
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-const MAX_TEXT_FILE_SIZE = 1 * 1024 * 1024; // 1MB (smaller limit for text files)
 
 /** Dependency injection interface for the thread message handler */
 export interface ThreadMessageHandlerDeps {
@@ -51,76 +48,17 @@ export function classifyAttachment(contentType: string | null, filename: string)
 }
 
 /**
- * Downloads file attachments from a Discord message (legacy helper, used by Discord adapter)
- */
-async function downloadAttachments(message: Message): Promise<FileAttachment[]> {
-  const files: FileAttachment[] = [];
-
-  for (const [, attachment] of message.attachments) {
-    const fileType = classifyAttachment(attachment.contentType, attachment.name);
-    if (!fileType) continue;
-
-    // Text files have a smaller size limit
-    const sizeLimit = fileType === 'text' ? MAX_TEXT_FILE_SIZE : MAX_FILE_SIZE;
-    if (attachment.size > sizeLimit) continue;
-
-    try {
-      const response = await fetch(attachment.url);
-      const buffer = Buffer.from(await response.arrayBuffer());
-
-      const fileAttachment: FileAttachment = {
-        type: fileType,
-        base64: buffer.toString('base64'),
-        mediaType: attachment.contentType || 'application/octet-stream',
-        filename: attachment.name,
-      };
-
-      // Additionally save plain text content for text files
-      if (fileType === 'text') {
-        fileAttachment.textContent = buffer.toString('utf-8');
-      }
-
-      files.push(fileAttachment);
-    } catch (error) {
-      log.error({ err: error, filename: attachment.name }, 'Failed to download file');
-    }
-  }
-
-  return files;
-}
-
-/**
  * Creates the thread message handler, listening for follow-up messages from users in threads and starting resume queries.
- * Supports both PlatformInteraction (new adapter path) and Discord Message (legacy path).
  *
  * @param deps - Dependencies required by the thread message handler
  * @returns An async function that handles thread messages
  */
 export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
-  return async function handleThreadMessage(input: Message | PlatformInteraction): Promise<void> {
-    // Determine if this is a PlatformInteraction or a raw Discord Message
-    let userId: string;
-    let threadId: string;
-    let messageContent: string;
-    let fileAttachments: FileAttachment[];
-
-    if ('platform' in input) {
-      // PlatformInteraction path
-      const pi = input as PlatformInteraction;
-      userId = pi.userId;
-      threadId = pi.threadId;
-      messageContent = (pi.text ?? '').trim();
-      fileAttachments = await deps.adapter.downloadAttachments(pi);
-    } else {
-      // Legacy Discord Message path
-      const message = input as Message;
-      if (message.author.bot) return;
-      if (!message.channel.isThread()) return;
-      userId = message.author.id;
-      threadId = message.channel.id;
-      messageContent = message.content.trim();
-      fileAttachments = await downloadAttachments(message);
-    }
+  return async function handleThreadMessage(input: PlatformInteraction): Promise<void> {
+    const userId = input.userId;
+    const threadId = input.threadId;
+    const messageContent = (input.text ?? '').trim();
+    const fileAttachments = await deps.adapter.downloadAttachments(input);
 
     // Verify this thread has a corresponding session
     const { store } = deps;
