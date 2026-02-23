@@ -31,6 +31,7 @@ import type { GlobalUsageStats } from '../effects/usage-store.js';
 function makeSession(overrides?: Partial<SessionState>): SessionState {
   return {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId: 't1',
     userId: 'u1',
@@ -51,13 +52,13 @@ function makeSession(overrides?: Partial<SessionState>): SessionState {
 describe('buildToolUseEmbed', () => {
   it('includes tool name and emoji', () => {
     const embed = buildToolUseEmbed('Read', { file_path: '/test/file.ts' }, '/test');
-    expect(embed.author?.name).toContain('Read');
-    expect(embed.author?.name).toContain('📖');
+    expect(embed.author).toContain('Read');
+    expect(embed.author).toContain('📖');
   });
 
   it('uses default emoji for unknown tools', () => {
     const embed = buildToolUseEmbed('CustomTool', { key: 'val' }, '/test');
-    expect(embed.author?.name).toContain('🔧');
+    expect(embed.author).toContain('🔧');
   });
 
   it('shows footer when meta is provided', () => {
@@ -66,8 +67,8 @@ describe('buildToolUseEmbed', () => {
       permissionMode: 'default',
       sessionId: 'abcdefgh12345678',
     });
-    expect(embed.footer?.text).toContain('opus');
-    expect(embed.footer?.text).toContain('abcdefgh');
+    expect(embed.footer).toContain('opus');
+    expect(embed.footer).toContain('abcdefgh');
   });
 
   it('has no footer when meta is absent', () => {
@@ -79,7 +80,7 @@ describe('buildToolUseEmbed', () => {
 describe('buildPermissionRequestEmbed', () => {
   it('shows approval prompt', () => {
     const embed = buildPermissionRequestEmbed('Bash', { command: 'rm -rf /' }, '/test');
-    expect(embed.author?.name).toContain('Approval');
+    expect(embed.author).toContain('Approval');
     expect(embed.color).toBe(COLORS.Permission);
     expect(embed.fields?.some((f) => f.value.includes('approve'))).toBe(true);
   });
@@ -89,7 +90,7 @@ describe('buildProgressEmbed', () => {
   it('shows progress text and tool count', () => {
     const embed = buildProgressEmbed('Processing...', 5);
     expect(embed.description).toBe('Processing...');
-    expect(embed.footer?.text).toContain('5');
+    expect(embed.footer).toContain('5');
   });
 
   it('truncates overly long text', () => {
@@ -102,7 +103,7 @@ describe('buildProgressEmbed', () => {
 describe('buildStreamingTextEmbed', () => {
   it('shows responding status', () => {
     const embed = buildStreamingTextEmbed('hello', 3);
-    expect(embed.author?.name).toContain('Responding');
+    expect(embed.author).toContain('Responding');
     expect(embed.description).toBe('hello');
   });
 });
@@ -253,7 +254,7 @@ describe('buildStopPreviewEmbed', () => {
 describe('buildStopConfirmEmbed', () => {
   it('shows abort result', () => {
     const embed = buildStopConfirmEmbed({ toolCount: 2, tools: { Bash: 2 } }, 5000);
-    expect(embed.author?.name).toContain('Stopped');
+    expect(embed.author).toContain('Stopped');
     expect(embed.fields?.some((f) => f.value.includes('5s'))).toBe(true);
   });
 });
@@ -265,14 +266,14 @@ describe('buildMultiStatusEmbed', () => {
       ['t2', makeSession({ promptText: 'Task two', toolCount: 1 })],
     ]);
     const embed = buildMultiStatusEmbed(sessions);
-    expect(embed.author?.name).toContain('2');
+    expect(embed.author).toContain('2');
     expect(embed.description).toContain('Task one');
     expect(embed.description).toContain('Task two');
   });
 
   it('description is empty when Map is empty', () => {
     const embed = buildMultiStatusEmbed(new Map());
-    expect(embed.author?.name).toContain('0');
+    expect(embed.author).toContain('0');
   });
 });
 
@@ -354,7 +355,7 @@ describe('buildRetryEmbed', () => {
   it('shows retry information', () => {
     const embed = buildRetryEmbed('Do it again');
     expect(embed.description).toContain('Do it again');
-    expect(embed.author?.name).toContain('Retry');
+    expect(embed.author).toContain('Retry');
   });
 });
 
@@ -409,7 +410,7 @@ describe('buildAskQuestionStepEmbed', () => {
       { question: 'Only question?', header: 'Q1', options: [{ label: 'A', description: '' }], multiSelect: false },
     ] });
     const embed = buildAskQuestionStepEmbed(state);
-    expect(embed.author?.name).not.toContain('/');
+    expect(embed.author).not.toContain('/');
   });
 
   it('shows progress for multiple questions', () => {
@@ -419,7 +420,7 @@ describe('buildAskQuestionStepEmbed', () => {
       { question: 'Question three?', header: 'Q3', options: [{ label: 'C', description: '' }], multiSelect: false },
     ] });
     const embed = buildAskQuestionStepEmbed(state);
-    expect(embed.author?.name).toContain('2/3');
+    expect(embed.author).toContain('2/3');
   });
 
   it('shows summary of answered questions', () => {
@@ -437,13 +438,13 @@ describe('buildAskQuestionStepEmbed', () => {
       ],
     });
     const embed = buildAskQuestionStepEmbed(state);
-    expect(embed.footer?.text).toContain('Submit');
+    expect(embed.footer).toContain('Submit');
   });
 
   it('footer prompts to click button when not multiSelect', () => {
     const state = makeAskState();
     const embed = buildAskQuestionStepEmbed(state);
-    expect(embed.footer?.text).toContain('Click');
+    expect(embed.footer).toContain('Click');
   });
 
   it('uses header as title', () => {
@@ -541,15 +542,15 @@ describe('buildFollowUpEmbed - edge cases', () => {
 describe('buildFooterText via buildToolUseEmbed', () => {
   it('displays correctly when only model is provided', () => {
     const embed = buildToolUseEmbed('Bash', { command: 'ls' }, '/test', { model: 'opus' });
-    expect(embed.footer?.text).toContain('opus');
+    expect(embed.footer).toContain('opus');
     // Should not have extra separators
-    expect(embed.footer?.text).not.toMatch(/• $/);
-    expect(embed.footer?.text).not.toMatch(/^• /);
+    expect(embed.footer).not.toMatch(/• $/);
+    expect(embed.footer).not.toMatch(/^• /);
   });
 
   it('shows English text for plan permission mode', () => {
     const embed = buildToolUseEmbed('Bash', { command: 'ls' }, '/test', { permissionMode: 'plan' });
-    expect(embed.footer?.text).toContain('Plan Mode');
+    expect(embed.footer).toContain('Plan Mode');
   });
 });
 
@@ -573,7 +574,7 @@ describe('buildIdleCleanupEmbed', () => {
 
   it('shows session timeout author', () => {
     const embed = buildIdleCleanupEmbed(60000);
-    expect(embed.author?.name).toContain('Session Timeout');
+    expect(embed.author).toContain('Session Timeout');
   });
 });
 

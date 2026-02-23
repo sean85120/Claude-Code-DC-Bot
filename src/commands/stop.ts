@@ -15,6 +15,7 @@ import { canExecuteCommand } from '../modules/permissions.js';
 import { buildStopPreviewEmbed, buildStopConfirmEmbed, buildNotificationEmbed } from '../modules/embeds.js';
 import { deferReply, editReply, sendInThread } from '../effects/discord-sender.js';
 import { resolveThreadId } from '../modules/session-resolver.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 
 /** /stop command definition: abort a running Claude Code task */
 export const data = new SlashCommandBuilder()
@@ -77,7 +78,7 @@ export async function execute(
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(confirmBtn, cancelBtn);
 
-  await editReply(interaction, { embeds: [embed], components: [row] });
+  await editReply(interaction, { embeds: [richMessageToEmbed(embed)], components: [row] });
 }
 
 /**
@@ -106,7 +107,7 @@ export async function executeStop(
       if (channel?.isThread()) {
         const thread = channel as ThreadChannel;
         const embed = buildNotificationEmbed('📋 Queued task has been cancelled.');
-        await sendInThread(thread, embed);
+        await sendInThread(thread, richMessageToEmbed(embed));
         await thread.setArchived(true);
       }
     } catch {
@@ -140,7 +141,7 @@ export async function executeStop(
         { toolCount: session.toolCount, tools: session.tools },
         durationMs,
       );
-      await sendInThread(thread, embed);
+      await sendInThread(thread, richMessageToEmbed(embed));
       await thread.setArchived(true);
     }
   } catch {

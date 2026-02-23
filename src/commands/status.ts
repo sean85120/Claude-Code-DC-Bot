@@ -6,6 +6,7 @@ import type { QueueStore } from '../effects/queue-store.js';
 import { canExecuteCommand } from '../modules/permissions.js';
 import { buildStatusEmbed, buildGlobalStatusEmbed } from '../modules/embeds.js';
 import { deferReplyEphemeral, editReply } from '../effects/discord-sender.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 
 /** /status command definition: view Claude Code execution status */
 export const data = new SlashCommandBuilder()
@@ -41,7 +42,7 @@ export async function execute(
     const session = store.getSession(channel.id);
     const sessionUsage = usageStore.getSessionUsage(channel.id);
     const embed = buildStatusEmbed(session, sessionUsage);
-    await editReply(interaction, { embeds: [embed] });
+    await editReply(interaction, { embeds: [richMessageToEmbed(embed)] });
     return;
   }
 
@@ -52,7 +53,8 @@ export async function execute(
   const embed = buildGlobalStatusEmbed(globalStats, activeSessions, userUsage);
 
   // Add queue info if there are queued sessions
-  const embeds = [embed];
+  const convertedEmbed = richMessageToEmbed(embed);
+  const embeds = [convertedEmbed];
   if (queueStore && queueStore.getTotalQueuedCount() > 0) {
     const allQueues = queueStore.getAllQueues();
     let queueText = '';
@@ -66,8 +68,8 @@ export async function execute(
         queueText += `  ... and ${entries.length - 3} more\n`;
       }
     }
-    embed.fields = [
-      ...(embed.fields ?? []),
+    convertedEmbed.fields = [
+      ...(convertedEmbed.fields ?? []),
       {
         name: `📋 Queue (${queueStore.getTotalQueuedCount()} total)`,
         value: queueText.trim().slice(0, 1024),

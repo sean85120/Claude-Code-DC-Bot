@@ -39,6 +39,7 @@ const mockConfig: BotConfig = {
 function makeSession(threadId: string, overrides?: Partial<SessionState>): SessionState {
   return {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId,
     userId: 'user-1',

@@ -10,6 +10,7 @@ import { canExecuteCommand } from '../modules/permissions.js';
 import { groupSessionsByRepo, buildDailySummaryEmbed } from '../modules/daily-summary.js';
 import { resolveSummaryChannel } from '../effects/summary-channel.js';
 import { deferReplyEphemeral, editReply } from '../effects/discord-sender.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 import { emptyTokenUsage } from '../modules/token-usage.js';
 import { logger } from '../effects/logger.js';
 
@@ -125,7 +126,7 @@ export async function execute(
   // Post to the summary channel
   try {
     const channel = await resolveSummaryChannel(client, config);
-    await channel.send({ embeds: [embed] });
+    await channel.send({ embeds: [richMessageToEmbed(embed)] });
 
     lastPostTime.set(targetDate, Date.now());
 

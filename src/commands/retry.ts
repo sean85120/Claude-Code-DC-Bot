@@ -9,6 +9,7 @@ const log = logger.child({ module: 'Retry' });
 import { resolveThreadId } from '../modules/session-resolver.js';
 import { buildRetryEmbed } from '../modules/embeds.js';
 import { deferReply, editReply, sendInThread } from '../effects/discord-sender.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 
 /** /retry command definition: re-execute the last prompt in the thread */
 export const data = new SlashCommandBuilder()
@@ -64,6 +65,7 @@ export async function execute(
   const newAbortController = new AbortController();
   const newSession: SessionState = {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId,
     userId: session.userId,
@@ -86,7 +88,7 @@ export async function execute(
   const channel = interaction.channel;
   if (channel?.isThread()) {
     const retryEmbed = buildRetryEmbed(session.promptText);
-    await sendInThread(channel, retryEmbed);
+    await sendInThread(channel, richMessageToEmbed(retryEmbed));
   }
 
   await editReply(interaction, { content: '🔄 Re-executing...' });

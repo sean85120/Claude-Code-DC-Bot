@@ -1,12 +1,11 @@
-import type { Message, Client } from 'discord.js';
-import type { BotConfig, SessionState, FileAttachment } from '../types.js';
+import type { BotConfig, SessionState } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
+import type { PlatformAdapter, PlatformInteraction } from '../platforms/types.js';
 import { logger } from '../effects/logger.js';
 import { isUserAuthorized } from '../modules/permissions.js';
 
 const log = logger.child({ module: 'Thread' });
 import { buildFollowUpEmbed } from '../modules/embeds.js';
-import { sendInThread } from '../effects/discord-sender.js';
 
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const SUPPORTED_TEXT_EXTENSIONS = [
@@ -20,14 +19,12 @@ const SUPPORTED_TEXT_EXTENSIONS = [
   '.env', '.gitignore', '.dockerignore', '.editorconfig',
   '.dockerfile',
 ];
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-const MAX_TEXT_FILE_SIZE = 1 * 1024 * 1024; // 1MB (smaller limit for text files)
 
 /** Dependency injection interface for the thread message handler */
 export interface ThreadMessageHandlerDeps {
   config: BotConfig;
   store: StateStore;
-  client: Client;
+  adapter: PlatformAdapter;
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>;
 }
 
@@ -51,59 +48,17 @@ export function classifyAttachment(contentType: string | null, filename: string)
 }
 
 /**
- * Downloads file attachments from a Discord message
- */
-async function downloadAttachments(message: Message): Promise<FileAttachment[]> {
-  const files: FileAttachment[] = [];
-
-  for (const [, attachment] of message.attachments) {
-    const fileType = classifyAttachment(attachment.contentType, attachment.name);
-    if (!fileType) continue;
-
-    // Text files have a smaller size limit
-    const sizeLimit = fileType === 'text' ? MAX_TEXT_FILE_SIZE : MAX_FILE_SIZE;
-    if (attachment.size > sizeLimit) continue;
-
-    try {
-      const response = await fetch(attachment.url);
-      const buffer = Buffer.from(await response.arrayBuffer());
-
-      const fileAttachment: FileAttachment = {
-        type: fileType,
-        base64: buffer.toString('base64'),
-        mediaType: attachment.contentType || 'application/octet-stream',
-        filename: attachment.name,
-      };
-
-      // Additionally save plain text content for text files
-      if (fileType === 'text') {
-        fileAttachment.textContent = buffer.toString('utf-8');
-      }
-
-      files.push(fileAttachment);
-    } catch (error) {
-      log.error({ err: error, filename: attachment.name }, 'Failed to download file');
-    }
-  }
-
-  return files;
-}
-
-/**
- * Creates the thread message handler, listening for follow-up messages from users in threads and starting resume queries
+ * Creates the thread message handler, listening for follow-up messages from users in threads and starting resume queries.
  *
  * @param deps - Dependencies required by the thread message handler
- * @returns An async function that handles Discord message events
+ * @returns An async function that handles thread messages
  */
 export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
-  return async function handleThreadMessage(message: Message): Promise<void> {
-    // Ignore messages from the bot itself
-    if (message.author.bot) return;
-
-    // Only process messages in threads
-    if (!message.channel.isThread()) return;
-
-    const threadId = message.channel.id;
+  return async function handleThreadMessage(input: PlatformInteraction): Promise<void> {
+    const userId = input.userId;
+    const threadId = input.threadId;
+    const messageContent = (input.text ?? '').trim();
+    const fileAttachments = await deps.adapter.downloadAttachments(input);
 
     // Verify this thread has a corresponding session
     const { store } = deps;
@@ -114,18 +69,14 @@ export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
     if (session.status !== 'waiting_input') return;
 
     // Check user authorization
-    if (!isUserAuthorized(message.author.id, deps.config.allowedUserIds)) return;
-
-    // Get follow-up text and files
-    const followUpText = message.content.trim();
-    const fileAttachments = await downloadAttachments(message);
+    if (!isUserAuthorized(userId, deps.config.allowedUserIds)) return;
 
     // Must have text or files
-    if (!followUpText && fileAttachments.length === 0) return;
+    if (!messageContent && fileAttachments.length === 0) return;
 
     // Verify there is a sessionId available for resume
     if (!session.sessionId) {
-      await message.reply('⚠️ Unable to resume conversation: missing Session ID');
+      await deps.adapter.sendText(threadId, '⚠️ Unable to resume conversation: missing Session ID');
       return;
     }
 
@@ -138,7 +89,7 @@ export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
       .map((f) => `--- ${f.filename} ---\n${f.textContent}`)
       .join('\n\n');
 
-    const promptParts = [followUpText, textFileContents].filter(Boolean);
+    const promptParts = [messageContent, textFileContents].filter(Boolean);
     const promptText = promptParts.join('\n\n') || '(Please see attachments)';
 
     // Non-text files (images + PDFs) need to be sent as content blocks
@@ -162,17 +113,17 @@ export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
       updatedSession.transcript.push({
         timestamp: new Date(),
         type: 'user',
-        content: `${followUpText || ''}${attachmentSummary}`.slice(0, 2000),
+        content: `${messageContent || ''}${attachmentSummary}`.slice(0, 2000),
       });
     }
 
-    // Send follow-up confirmation Embed
+    // Send follow-up confirmation embed
     const embed = buildFollowUpEmbed(
-      followUpText || '(See attachments)',
+      messageContent || '(See attachments)',
       fileAttachments.length,
       fileAttachments.map((f) => f.filename),
     );
-    await sendInThread(message.channel, embed);
+    await deps.adapter.sendRichMessage(threadId, embed);
 
     // Start resume query
     if (!updatedSession) return;

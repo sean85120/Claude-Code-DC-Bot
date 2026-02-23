@@ -1,4 +1,4 @@
-import type { APIEmbed } from 'discord.js';
+import type { RichMessage } from '../platforms/types.js';
 import type { CompletedSessionRecord, DailyRecord, RepoSummary } from '../types.js';
 import { COLORS } from '../types.js';
 import { formatNumber, formatCost, formatDuration, truncate } from './formatters.js';
@@ -45,18 +45,18 @@ export function groupSessionsByRepo(sessions: CompletedSessionRecord[]): RepoSum
 export function buildDailySummaryEmbed(
   record: DailyRecord,
   repoSummaries: RepoSummary[],
-): APIEmbed {
+): RichMessage {
   if (record.sessions.length === 0) {
     return {
       color: COLORS.Info,
-      author: { name: '📅 Daily Summary' },
+      author: '📅 Daily Summary',
       title: `Summary for ${record.date}`,
       description: 'No completed sessions today. Take a break! ☕',
       timestamp: new Date().toISOString(),
     };
   }
 
-  const fields: APIEmbed['fields'] = [
+  const fields: RichMessage['fields'] = [
     {
       name: '📊 Overall Stats',
       value: [
@@ -118,7 +118,7 @@ export function buildDailySummaryEmbed(
 
   return {
     color: COLORS.Info,
-    author: { name: '📅 Daily Summary' },
+    author: '📅 Daily Summary',
     title: `Summary for ${record.date}`,
     description: `Completed **${record.sessions.length}** session${record.sessions.length === 1 ? '' : 's'} across **${repoSummaries.length}** ${repoSummaries.length === 1 ? 'repository' : 'repositories'}.`,
     fields,

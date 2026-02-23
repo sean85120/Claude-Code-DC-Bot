@@ -1,4 +1,3 @@
-import type { ThreadChannel, Message } from 'discord.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { BotConfig } from '../types.js';
 import { SEARCH_TOOLS } from '../types.js';
@@ -7,7 +6,7 @@ import { logger } from '../effects/logger.js';
 
 const log = logger.child({ module: 'Stream' });
 import type { UsageStore } from '../effects/usage-store.js';
-import { sendInThread, sendPlainInThread, editMessageText, sendTextInThread } from '../effects/discord-sender.js';
+import type { PlatformAdapter, PlatformMessage } from '../platforms/types.js';
 import {
   buildToolUseEmbed,
   buildCompactToolEmbed,
@@ -22,7 +21,7 @@ import { truncate } from '../modules/formatters.js';
 export interface StreamHandlerDeps {
   store: StateStore;
   threadId: string;
-  thread: ThreadChannel;
+  adapter: PlatformAdapter;
   cwd: string;
   streamUpdateIntervalMs: number;
   usageStore: UsageStore;
@@ -35,7 +34,7 @@ export interface StreamHandlerDeps {
  */
 interface StreamState {
   currentText: string;
-  currentMessage: Message | null;
+  currentMessage: PlatformMessage | null;
   lastUpdateTime: number;
   updateTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -50,7 +49,7 @@ function createStreamState(): StreamState {
 }
 
 /**
- * Throttled update of streaming text to Discord
+ * Throttled update of streaming text to the platform
  */
 async function throttledStreamUpdate(
   state: StreamState,
@@ -74,14 +73,12 @@ async function throttledStreamUpdate(
   await flushStreamUpdate(state, deps);
 }
 
-const STREAM_MAX_LEN = 2000;
-
 /**
- * Formats streaming text (shows the tail when exceeding Discord's limit)
+ * Formats streaming text (shows the tail when exceeding the platform's limit)
  */
-function formatStreamingText(text: string): string {
-  if (text.length <= STREAM_MAX_LEN) return text;
-  return '…' + text.slice(-(STREAM_MAX_LEN - 1));
+function formatStreamingText(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return '…' + text.slice(-(limit - 1));
 }
 
 /**
@@ -94,13 +91,13 @@ async function flushStreamUpdate(
   if (!state.currentText) return;
 
   state.lastUpdateTime = Date.now();
-  const displayText = formatStreamingText(state.currentText);
+  const displayText = formatStreamingText(state.currentText, deps.adapter.messageLimit);
 
   try {
     if (state.currentMessage) {
-      await editMessageText(state.currentMessage, displayText);
+      await deps.adapter.editText(state.currentMessage, displayText);
     } else {
-      state.currentMessage = await sendPlainInThread(deps.thread, displayText);
+      state.currentMessage = await deps.adapter.sendPlainText(deps.threadId, displayText);
     }
   } catch (err) {
     log.error({ err }, 'Stream text update error');
@@ -108,7 +105,7 @@ async function flushStreamUpdate(
 }
 
 /**
- * Handles a single SDK message, forwarding it to the corresponding Discord Thread based on message type
+ * Handles a single SDK message, forwarding it to the corresponding thread based on message type
  *
  * @param message - Message returned by the Claude SDK
  * @param deps - Dependencies required by the stream handler
@@ -120,7 +117,7 @@ export async function handleSDKMessage(
   deps: StreamHandlerDeps,
   streamState: StreamState,
 ): Promise<void> {
-  const { store, threadId, thread, cwd } = deps;
+  const { store, threadId, adapter, cwd } = deps;
 
   switch (message.type) {
     case 'system': {
@@ -170,24 +167,24 @@ export async function handleSDKMessage(
       }
 
       if (text) {
-        if (text.length <= 2000 && streamState.currentMessage) {
-          // Text is within 2000 chars, edit the stream message directly
+        if (text.length <= adapter.messageLimit && streamState.currentMessage) {
+          // Text is within limit, edit the stream message directly
           try {
-            await editMessageText(streamState.currentMessage, text);
+            await adapter.editText(streamState.currentMessage, text);
           } catch {
             // If editing fails, resend
-            await sendTextInThread(thread, text);
+            await adapter.sendText(threadId, text);
           }
         } else {
-          // Text exceeds 2000 chars or no stream message, delete stream message and send in segments
+          // Text exceeds limit or no stream message, delete stream message and send in segments
           if (streamState.currentMessage) {
             try {
-              await streamState.currentMessage.delete();
+              await adapter.deleteMessage(streamState.currentMessage);
             } catch {
               // Message may have already been deleted
             }
           }
-          await sendTextInThread(thread, text);
+          await adapter.sendText(threadId, text);
         }
       }
 
@@ -221,7 +218,7 @@ export async function handleSDKMessage(
         const embed = cfg.compactToolEmbeds
           ? buildCompactToolEmbed(tool.toolName, toolInput, cwd)
           : buildToolUseEmbed(tool.toolName, toolInput, cwd);
-        await sendInThread(thread, embed);
+        await adapter.sendRichMessage(threadId, embed);
       }
       break;
     }
@@ -251,11 +248,11 @@ export async function handleSDKMessage(
         log.info({ threadId, tokens: usage, cost: result.costUsd, durationMs: result.durationMs }, 'Result received');
         // Response text was already sent in the assistant message; here we only send the stats summary
         const embed = buildResultEmbed('', stats, usage, result.durationMs, result.costUsd);
-        await sendInThread(thread, embed);
+        await adapter.sendRichMessage(threadId, embed);
       } else {
         log.warn({ threadId, error: truncate(result.text || '', 100) }, 'Error result received');
         const embed = buildErrorEmbed(result.text || 'An error occurred during execution');
-        await sendInThread(thread, embed);
+        await adapter.sendRichMessage(threadId, embed);
       }
 
       break;

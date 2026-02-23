@@ -89,13 +89,26 @@ const mockConfig: BotConfig = {
   budgetMonthlyLimitUsd: 0,
   showGitSummary: true,
   dataDir: '/tmp/test-data',
+  discordEnabled: true,
+  slackEnabled: false,
+  whatsappEnabled: false,
+  slackBotToken: '',
+  slackAppToken: '',
+  slackSigningSecret: '',
+  whatsappAllowedNumbers: [],
 };
+
+const mockAdapter = {
+  sendRichMessage: vi.fn().mockResolvedValue({ id: 'msg1', threadId: 't1', platform: 'discord' }),
+  sendText: vi.fn().mockResolvedValue({ id: 'msg2', threadId: 't1', platform: 'discord' }),
+} as never;
 
 function makeDeps(store?: StateStore) {
   return {
     config: mockConfig,
     store: store || new StateStore(),
     client: {} as never,
+    adapter: mockAdapter,
     startClaudeQuery: vi.fn().mockResolvedValue(undefined),
     rateLimitStore: { getEntry: vi.fn(), setEntry: vi.fn() } as unknown as RateLimitStore,
     usageStore: new UsageStore(),
@@ -205,6 +218,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'awaiting_permission',
         threadId: 't1',
         userId: 'user1',
@@ -258,6 +272,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'awaiting_permission',
         threadId: 't1',
         userId: 'user1',
@@ -300,6 +315,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'awaiting_permission',
         threadId: 't1',
         userId: 'user1',
@@ -354,6 +370,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'running',
         threadId: 't1',
         userId: 'u1',
@@ -480,6 +497,10 @@ describe('createInteractionHandler', () => {
             }),
           },
         } as never,
+        adapter: {
+          sendRichMessage: vi.fn().mockResolvedValue({ id: 'msg1', threadId: 't1', platform: 'discord' }),
+          sendText: vi.fn().mockResolvedValue({ id: 'msg2', threadId: 't1', platform: 'discord' }),
+        } as never,
         startClaudeQuery: vi.fn().mockResolvedValue(undefined),
         rateLimitStore: { getEntry: vi.fn(), setEntry: vi.fn() } as unknown as RateLimitStore,
         usageStore: new UsageStore(),
@@ -552,6 +573,7 @@ describe('createInteractionHandler', () => {
       const store = new StateStore();
       store.setSession('t1', {
         sessionId: null,
+        platform: 'discord',
         status: 'running',
         threadId: 't1',
         userId: 'u1',

@@ -1,27 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { ThreadChannel, Message } from 'discord.js';
 import { StateStore } from '../effects/state-store.js';
 import { createCanUseTool } from './permission-handler.js';
-
-// Mock discord-sender
-vi.mock('../effects/discord-sender.js', () => ({
-  sendEmbedWithApprovalButtons: vi.fn().mockResolvedValue({ id: 'btn-msg-1' } as unknown as Message),
-  sendEmbedWithAskButtons: vi.fn().mockResolvedValue({ id: 'ask-msg-1' } as unknown as Message),
-  buildQuestionButtons: vi.fn().mockReturnValue([]),
-  sendTextInThread: vi.fn().mockResolvedValue([]),
-}));
+import type { PlatformAdapter } from '../platforms/types.js';
 
 vi.mock('../modules/embeds.js', () => ({
   buildPermissionRequestEmbed: vi.fn().mockReturnValue({ title: 'permission' }),
   buildAskQuestionStepEmbed: vi.fn().mockReturnValue({ title: 'ask-step' }),
 }));
 
-import { sendEmbedWithApprovalButtons, sendEmbedWithAskButtons, sendTextInThread } from '../effects/discord-sender.js';
+function makeMockAdapter() {
+  return {
+    platform: 'discord' as const,
+    messageLimit: 2000,
+    sendRichMessageWithButtons: vi.fn().mockResolvedValue({ id: 'msg1', threadId: 't1', platform: 'discord' }),
+    sendRichMessage: vi.fn().mockResolvedValue({ id: 'msg1', threadId: 't1', platform: 'discord' }),
+    sendText: vi.fn().mockResolvedValue([]),
+    mentionUser: (id: string) => `<@${id}>`,
+  } as unknown as PlatformAdapter;
+}
 
 function makeStore(threadId: string, userId = 'u1'): StateStore {
   const store = new StateStore();
   store.setSession(threadId, {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId,
     userId,
@@ -38,10 +40,6 @@ function makeStore(threadId: string, userId = 'u1'): StateStore {
     allowedTools: new Set(),
   });
   return store;
-}
-
-function makeThread(id = 't1'): ThreadChannel {
-  return { id } as unknown as ThreadChannel;
 }
 
 /** Wait for pending approval to be set in the store */
@@ -67,31 +65,30 @@ describe('createCanUseTool', () => {
     it('auto-approves when tool is in allowedTools', async () => {
       const store = makeStore('t1');
       store.addAllowedTool('t1', 'Bash');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       const result = await canUseTool('Bash', { command: 'ls' }, { signal });
 
       expect(result.behavior).toBe('allow');
       expect(result.updatedInput).toEqual({ command: 'ls' });
-      // Should NOT send any Discord messages
-      expect(sendEmbedWithApprovalButtons).not.toHaveBeenCalled();
-      expect(sendEmbedWithAskButtons).not.toHaveBeenCalled();
-      expect(sendTextInThread).not.toHaveBeenCalled();
+      // Should NOT send any messages
+      expect(adapter.sendRichMessageWithButtons).not.toHaveBeenCalled();
+      expect(adapter.sendText).not.toHaveBeenCalled();
     });
 
     it('does not auto-approve tools not in allowedTools', async () => {
       const store = makeStore('t1');
       store.addAllowedTool('t1', 'Bash');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       const promise = canUseTool('Write', { file_path: '/a.ts' }, { signal });
 
       await waitForPending(store, 't1');
-      expect(sendEmbedWithApprovalButtons).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessageWithButtons).toHaveBeenCalledTimes(1);
 
       store.resolvePendingApproval('t1', { behavior: 'allow' });
       await promise;
@@ -101,8 +98,8 @@ describe('createCanUseTool', () => {
   describe('General tool permission requests', () => {
     it('sends permission request Embed + buttons and returns result', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       // Don't await, because the Promise will pause waiting for user response
@@ -110,7 +107,7 @@ describe('createCanUseTool', () => {
 
       await waitForPending(store, 't1');
 
-      expect(sendEmbedWithApprovalButtons).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessageWithButtons).toHaveBeenCalledTimes(1);
 
       const pending = store.getPendingApproval('t1');
       expect(pending!.toolName).toBe('Bash');
@@ -123,8 +120,8 @@ describe('createCanUseTool', () => {
 
     it('returns deny when user denies', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       const promise = canUseTool('Write', { file_path: '/a.ts' }, { signal });
@@ -139,16 +136,16 @@ describe('createCanUseTool', () => {
 
     it('@mention notifies the user', async () => {
       const store = makeStore('t1', 'user-123');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       const promise = canUseTool('Bash', {}, { signal });
 
       await waitForPending(store, 't1');
 
-      expect(sendTextInThread).toHaveBeenCalledWith(
-        thread,
+      expect(adapter.sendText).toHaveBeenCalledWith(
+        't1',
         '<@user-123> A tool requires your approval.',
       );
 
@@ -158,8 +155,8 @@ describe('createCanUseTool', () => {
 
     it('auto-denies when AbortSignal is triggered', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const abortController = new AbortController();
       const promise = canUseTool('Bash', {}, { signal: abortController.signal });
@@ -174,8 +171,8 @@ describe('createCanUseTool', () => {
 
     it('auto-denies after approval timeout', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 10000 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 10000 });
 
       const signal = new AbortController().signal;
       const promise = canUseTool('Bash', { command: 'rm -rf /' }, { signal });
@@ -190,16 +187,16 @@ describe('createCanUseTool', () => {
       expect(result.message).toContain('timed out');
 
       // Should notify in thread
-      expect(sendTextInThread).toHaveBeenCalledWith(
-        thread,
+      expect(adapter.sendText).toHaveBeenCalledWith(
+        't1',
         expect.stringContaining('timed out'),
       );
     });
 
     it('clears timeout when user responds before timeout', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 60000 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 60000 });
 
       const signal = new AbortController().signal;
       const promise = canUseTool('Bash', { command: 'ls' }, { signal });
@@ -219,8 +216,8 @@ describe('createCanUseTool', () => {
   describe('AskUserQuestion special handling', () => {
     it('displays question buttons instead of approval buttons', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       const input = {
@@ -238,8 +235,7 @@ describe('createCanUseTool', () => {
 
       await waitForPending(store, 't1');
 
-      expect(sendEmbedWithAskButtons).toHaveBeenCalledTimes(1);
-      expect(sendEmbedWithApprovalButtons).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessageWithButtons).toHaveBeenCalledTimes(1);
 
       const pending = store.getPendingApproval('t1');
       expect(pending?.askState).toBeDefined();
@@ -251,8 +247,8 @@ describe('createCanUseTool', () => {
 
     it('AskUser alias also triggers special handling', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       const input = {
@@ -267,7 +263,7 @@ describe('createCanUseTool', () => {
       const promise = canUseTool('AskUser', input, { signal });
 
       await waitForPending(store, 't1');
-      expect(sendEmbedWithAskButtons).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessageWithButtons).toHaveBeenCalledTimes(1);
 
       store.resolvePendingApproval('t1', { behavior: 'allow' });
       await promise;
@@ -275,8 +271,8 @@ describe('createCanUseTool', () => {
 
     it('AskUserQuestion falls back to normal permission flow when no options', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       const input = {
@@ -286,7 +282,7 @@ describe('createCanUseTool', () => {
       const promise = canUseTool('AskUserQuestion', input, { signal });
 
       await waitForPending(store, 't1');
-      expect(sendEmbedWithApprovalButtons).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessageWithButtons).toHaveBeenCalledTimes(1);
 
       store.resolvePendingApproval('t1', { behavior: 'allow' });
       await promise;
@@ -294,8 +290,8 @@ describe('createCanUseTool', () => {
 
     it('@mention notifies user to answer questions', async () => {
       const store = makeStore('t1', 'user-456');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const signal = new AbortController().signal;
       const input = {
@@ -306,8 +302,8 @@ describe('createCanUseTool', () => {
 
       await waitForPending(store, 't1');
 
-      expect(sendTextInThread).toHaveBeenCalledWith(
-        thread,
+      expect(adapter.sendText).toHaveBeenCalledWith(
+        't1',
         '<@user-456> Claude has questions for you to answer.',
       );
 
@@ -317,8 +313,8 @@ describe('createCanUseTool', () => {
 
     it('AskUserQuestion auto-denies on AbortSignal', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 0 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 0 });
 
       const abortController = new AbortController();
       const input = {
@@ -337,8 +333,8 @@ describe('createCanUseTool', () => {
 
     it('AskUserQuestion auto-denies after approval timeout', async () => {
       const store = makeStore('t1');
-      const thread = makeThread('t1');
-      const canUseTool = createCanUseTool({ store, threadId: 't1', thread, cwd: '/test', approvalTimeoutMs: 5000 });
+      const adapter = makeMockAdapter();
+      const canUseTool = createCanUseTool({ store, threadId: 't1', adapter, cwd: '/test', approvalTimeoutMs: 5000 });
 
       const signal = new AbortController().signal;
       const input = {

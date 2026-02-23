@@ -27,6 +27,7 @@ import {
   sendInThread,
 } from '../effects/discord-sender.js';
 import { resolveProjectChannel } from '../effects/channel-manager.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 
 /**
  * Dynamically builds the /prompt slash command definition based on the project list
@@ -210,6 +211,7 @@ export async function execute(
   const abortController = new AbortController();
   const session: SessionState = {
     sessionId: null,
+    platform: 'discord',
     status: 'running',
     threadId: thread.id,
     userId: interaction.user.id,
@@ -252,7 +254,7 @@ export async function execute(
     log.info({ threadId: thread.id, position, cwd, prompt: truncate(message, 40) }, 'Session queued');
 
     const queueEmbed = buildQueuedEmbed(position, message, cwd);
-    await sendInThread(thread, queueEmbed);
+    await sendInThread(thread, richMessageToEmbed(queueEmbed));
 
     await editReply(interaction, {
       content: channelCreated
@@ -268,7 +270,7 @@ export async function execute(
 
   // Send start embed to thread
   const startEmbed = buildSessionStartEmbed(message, cwd, model);
-  await sendInThread(thread, startEmbed);
+  await sendInThread(thread, richMessageToEmbed(startEmbed));
 
   await editReply(interaction, {
     content: channelCreated
@@ -283,7 +285,7 @@ export async function execute(
       error instanceof Error ? error.message : String(error),
     );
     try {
-      await sendInThread(thread, errorEmbed);
+      await sendInThread(thread, richMessageToEmbed(errorEmbed));
     } catch {
       // Thread may no longer exist
     }

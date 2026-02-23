@@ -5,7 +5,7 @@
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org)
 
-> 📱 Control [Claude Code](https://docs.anthropic.com/en/docs/claude-code) from anywhere — your phone, tablet, or any device with Discord.
+> 📱 Control [Claude Code](https://docs.anthropic.com/en/docs/claude-code) from anywhere — your phone, tablet, or any device with **Discord**, **Slack**, or **WhatsApp**.
 
 Send prompts, approve tool calls, and watch Claude work in real time, all without sitting at your computer. Built on the official [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk).
 
@@ -15,7 +15,17 @@ Send prompts, approve tool calls, and watch Claude work in real time, all withou
 
 ## 💡 Why?
 
-Claude Code is powerful but terminal-bound. This bot breaks that limit — you can kick off a refactor from your couch, approve a file write from your phone, and check progress from anywhere Discord runs. Each prompt gets its own thread, so you can run multiple tasks at once and never lose context.
+Claude Code is powerful but terminal-bound. This bot breaks that limit — you can kick off a refactor from your couch, approve a file write from your phone, and check progress from anywhere. Each prompt gets its own thread, so you can run multiple tasks at once and never lose context.
+
+### Supported Platforms
+
+| Platform | Streaming | Tool Approval | Follow-ups | File Attachments |
+| --- | --- | --- | --- | --- |
+| **Discord** | Live message edits | Approve/Deny/Always Allow buttons | Reply in thread | Images, PDFs, code files |
+| **Slack** | Live message updates via Block Kit | Interactive action buttons | Reply in thread | Slack file uploads |
+| **WhatsApp** | Final result (no mid-stream edits) | Numbered reply (1/2/3) | Reply in chat | Media downloads |
+
+All three platforms run in a single process with shared state — sessions started on any platform use the same Claude Code subprocess pool, project queue, and budget system.
 
 ---
 
@@ -42,6 +52,7 @@ Claude Code is powerful but terminal-bound. This bot breaks that limit — you c
 - 🙈 **Tool embed controls** — Configurable options to hide Read/Search/all tool embeds, or show compact single-line embeds
 - 💾 **Persistent queue storage** — Queued sessions are saved to disk and survive bot restarts
 - 🐳 **Docker deployment** — Multi-stage Dockerfile and docker-compose for containerized deployment
+- 🌐 **Multi-platform** — Run on Discord, Slack, and WhatsApp simultaneously from a single process
 
 ---
 
@@ -52,7 +63,7 @@ Claude Code is powerful but terminal-bound. This bot breaks that limit — you c
 - 📦 **Node.js** 18+
 - 📦 **npm** 9+
 - 🖥️ **Claude Code CLI** installed and logged in (`claude login`)
-- 🔑 **Discord Bot Token** from the [Discord Developer Portal](https://discord.com/developers/applications)
+- 🔑 **At least one platform configured:** Discord, Slack, or WhatsApp (see platform setup below)
 
 ### 1️⃣ Clone and install
 
@@ -113,10 +124,16 @@ Define your project directories in `projects.json`:
 ]
 ```
 
-### 5️⃣ Deploy and run
+### 5️⃣ Enable additional platforms (optional)
+
+By default, only Discord is enabled. To add Slack or WhatsApp, set the corresponding toggle in `.env` and provide the required credentials. You can enable any combination — all platforms share the same session state, project queue, and budget system.
+
+See [Slack Integration](#-slack-integration) and [WhatsApp Integration](#-whatsapp-integration) below for detailed setup instructions.
+
+### 6️⃣ Deploy and run
 
 ```bash
-npm run deploy-commands   # 📡 Register slash commands (first time or after changes)
+npm run deploy-commands   # 📡 Register Discord slash commands (first time or after changes)
 npm run dev               # 🟢 Start the bot
 ```
 
@@ -176,6 +193,16 @@ docker compose up -d      # 🐳 Start the bot in a container
 ---
 
 ## ⚙️ Configuration Reference
+
+### Platform toggles
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `DISCORD_ENABLED` | Enable Discord platform | `true` |
+| `SLACK_ENABLED` | Enable Slack platform | `false` |
+| `WHATSAPP_ENABLED` | Enable WhatsApp platform | `false` |
+
+At least one platform must be enabled. All enabled platforms run in a single process.
 
 ### Optional environment variables
 
@@ -292,6 +319,124 @@ The runner checks every 60 seconds for due schedules, creates a thread, and star
 
 ---
 
+## 💬 Slack Integration
+
+Connect Claude Code to your Slack workspace using Socket Mode (no public URL needed).
+
+### Setup
+
+1. **Create a Slack App** at [api.slack.com/apps](https://api.slack.com/apps) > **Create New App** > **From scratch**
+2. **Enable Socket Mode** under **Settings > Socket Mode** > toggle on. Copy the **App-Level Token** (`xapp-...`)
+3. **Add Bot Token Scopes** under **Features > OAuth & Permissions > Scopes > Bot Token Scopes**:
+   - `chat:write` — Send messages
+   - `chat:write.public` — Send messages to channels the bot hasn't joined
+   - `commands` — Register slash commands
+   - `files:read` — Download uploaded files
+4. **Install to Workspace** under **Settings > Install App** > copy the **Bot User OAuth Token** (`xoxb-...`)
+5. **Copy the Signing Secret** from **Settings > Basic Information > App Credentials**
+6. **Register Slash Commands** under **Features > Slash Commands** — create these commands:
+
+   | Command | Description |
+   | --- | --- |
+   | `/claude-prompt` | Send a prompt to Claude Code |
+   | `/claude-stop` | Stop the current session |
+   | `/claude-status` | View active session count |
+
+7. **Configure `.env`:**
+
+   ```env
+   SLACK_ENABLED=true
+   SLACK_BOT_TOKEN=xoxb-your-bot-token
+   SLACK_APP_TOKEN=xapp-your-app-token
+   SLACK_SIGNING_SECRET=your-signing-secret
+   ```
+
+8. Restart the bot. The startup banner will show `Slack: Connected`.
+
+### How it works
+
+- **Commands:** Use `/claude-prompt <text>` in any channel. The bot creates a thread and streams Claude's response using Block Kit formatting.
+- **Tool approval:** When Claude needs permission, interactive Approve/Deny/Always Allow buttons appear in the thread.
+- **Follow-ups:** Reply in the thread to continue the conversation.
+- **File attachments:** Upload files when sending a follow-up message — the bot downloads them via the Slack API.
+
+### Slack-specific behavior
+
+| Feature | Behavior |
+| --- | --- |
+| Rich messages | Slack Block Kit (header, section, context blocks) |
+| Streaming | `chat.update` edits the message in-place |
+| Ephemeral replies | `chat.postEphemeral` (visible only to the user) |
+| Message limit | 4,000 characters (vs Discord's 2,000) |
+| Thread archiving | No-op (Slack threads can't be individually archived) |
+
+---
+
+## 📲 WhatsApp Integration
+
+> ⚠️ **Experimental:** WhatsApp support uses [`whatsapp-web.js`](https://github.com/nicobrinkkemper/whatsapp-web.js), which automates WhatsApp Web via Puppeteer. This is not an official WhatsApp API and may be subject to WhatsApp's terms of service. Use at your own risk and for personal/development purposes only.
+
+### Setup
+
+1. **Configure `.env`:**
+
+   ```env
+   WHATSAPP_ENABLED=true
+   WHATSAPP_ALLOWED_NUMBERS=14155551234,447700900123
+   ```
+
+   `WHATSAPP_ALLOWED_NUMBERS` is a comma-separated list of phone numbers (without `+` prefix) that are allowed to interact with the bot. If empty, **all** numbers are allowed — configure this for security.
+
+2. **Start the bot.** On first launch, a QR code will appear in the terminal:
+
+   ```
+   ● WhatsApp    Waiting for QR
+   ```
+
+3. **Scan the QR code** with WhatsApp on your phone: open WhatsApp > Settings > Linked Devices > Link a Device > scan the terminal QR code.
+
+4. Once authenticated, the bot will show `WhatsApp authenticated` and `WhatsApp client ready` in the logs.
+
+### How it works
+
+- **Commands:** Send text commands in a direct chat with the bot's WhatsApp number:
+
+  | Command | Description |
+  | --- | --- |
+  | `/prompt <text>` | Start a new Claude session |
+  | `/stop` | Stop the current session |
+  | `/status` | Check session status |
+
+- **Tool approval:** When Claude needs permission, the bot sends a numbered list:
+  ```
+  *1.* Approve
+  *2.* Always Allow
+  *3.* Deny
+
+  _Reply with a number to select._
+  ```
+  Reply with `1`, `2`, `3`, or words like `approve`, `deny`, `yes`, `no`.
+
+- **Follow-ups:** After a session completes, send any message to continue the conversation in the same session.
+
+### WhatsApp-specific behavior
+
+| Feature | Behavior |
+| --- | --- |
+| Rich messages | Plain text with WhatsApp formatting (`*bold*`, `_italic_`) |
+| Streaming | No message editing — sends the final result only |
+| Tool approval | Numbered list with reply-by-number |
+| Sessions | One active session per chat at a time |
+| Message limit | 4,096 characters |
+| Group chats | Not supported (direct chats only) |
+| @mentions | Not applicable |
+
+### WhatsApp session IDs
+
+WhatsApp sessions use virtual thread IDs in the format `wa:{chatId}:{sessionUUID}`. This allows the bot to track multiple sequential sessions per chat while keeping each session's state isolated.
+
+---
+
 ## 🐳 Docker Deployment
 
 Run the bot in a Docker container for easier deployment and isolation. The multi-stage Dockerfile keeps the final image small (only production dependencies + compiled JS).
@@ -362,17 +507,23 @@ src/
 ├── handlers/    # 🔀 Orchestration (interaction routing, streaming, permissions, follow-ups, summary/schedule runners)
 ├── modules/     # 🧩 Pure functions (embeds, formatting, permissions, tool display, daily summary, git utils)
 ├── effects/     # ⚡ Side effects (Discord I/O, Claude SDK bridge, state/usage/budget/template/schedule stores, logger)
+├── platforms/   # 🌐 Platform adapters (Discord, Slack, WhatsApp)
+│   ├── types.ts           # PlatformAdapter interface + shared types
+│   ├── discord/adapter.ts # Discord implementation
+│   ├── slack/adapter.ts   # Slack implementation (Socket Mode)
+│   └── whatsapp/adapter.ts # WhatsApp implementation (whatsapp-web.js)
 ├── config.ts    # ⚙️ Environment variable parsing and validation
 ├── types.ts     # 📝 Shared type definitions and constants
-└── index.ts     # 🚪 Entry point
+└── index.ts     # 🚪 Entry point (multi-platform orchestrator)
 ```
 
 **Key design decisions:**
 
+- 🌐 **`PlatformAdapter` interface** — All platform I/O (sending messages, button interactions, thread management) goes through a single interface. Handlers and the Claude bridge never touch platform-specific APIs directly
 - 🧩 **`modules/`** contains pure functions with no side effects — easy to test in isolation
-- ⚡ **`effects/`** encapsulates all I/O (Discord API, Claude SDK, file system)
-- 🔗 **Permission bridge:** `canUseTool` creates a Promise and stores its `resolve` in the `StateStore`. The SDK pauses until a user clicks Approve/Deny in Discord, which resolves the Promise and unblocks execution
-- 💾 **Session state** is keyed by Discord thread ID and stored in memory. Active sessions are also persisted to `active-sessions.json` for crash recovery
+- ⚡ **`effects/`** encapsulates all I/O (Claude SDK, file system, stores)
+- 🔗 **Permission bridge:** `canUseTool` creates a Promise and stores its `resolve` in the `StateStore`. The SDK pauses until a user clicks Approve/Deny (button on Discord/Slack, numbered reply on WhatsApp), which resolves the Promise and unblocks execution
+- 💾 **Session state** is keyed by thread ID and stored in memory. Thread ID formats differ per platform: Discord uses channel IDs, Slack uses `{channelId}:{thread_ts}`, WhatsApp uses `wa:{chatId}:{sessionUUID}`. Active sessions are persisted to `active-sessions.json` for crash recovery
 - 📋 **Session queue** — Per-project queue ensures only one Claude subprocess runs per project directory at a time, preventing file conflicts. Queue state is persisted to `queued-sessions.json`
 - 📂 **Data directory** — All persistent stores (daily summaries, templates, schedules, queued sessions, recovery) write JSON files to a configurable `DATA_DIR`, making Docker volume mounts straightforward
 
@@ -382,11 +533,13 @@ src/
 
 Three layers of defense:
 
-1. 👤 **User authorization** — Only `ALLOWED_USER_IDS` can interact in `DISCORD_CHANNEL_ID`
+1. 👤 **User authorization** — Only `ALLOWED_USER_IDS` can interact with the bot. On Discord, this is enforced in `DISCORD_CHANNEL_ID`. On Slack, commands are checked against the same list. On WhatsApp, `WHATSAPP_ALLOWED_NUMBERS` provides an additional phone-number-based filter
 2. 📁 **Project whitelist** — `cwd` must be listed in `projects.json`, ensuring correct settings are loaded
-3. ✅ **Tool approval** — Each project's `.claude/settings.local.json` defines auto-approved tools; everything else requires explicit approval via Discord buttons
+3. ✅ **Tool approval** — Each project's `.claude/settings.local.json` defines auto-approved tools; everything else requires explicit approval (buttons on Discord/Slack, numbered reply on WhatsApp)
 
 > ⚠️ **Note:** The `cwd` restriction controls Claude's starting directory and loaded settings, not file system access. Claude can still reach other paths. The actual safeguards are the per-project allow list and the `canUseTool` approval flow.
+
+**Rate limiting** is enforced per-user across all platforms using the same window and request limits.
 
 ---
 
@@ -434,12 +587,12 @@ npm test -- src/modules/formatters.test.ts
 - [x] Scheduled prompts (daily, weekly, one-time)
 - [x] Persistent queue storage (queued sessions survive restart)
 - [x] Docker deployment with docker-compose
+- [x] Multi-platform support (Discord, Slack, WhatsApp)
 
 ### Planned
 
 - [ ] Web dashboard for session monitoring and management
 - [ ] Multi-guild support
-- [ ] Webhook integrations (Slack, email notifications)
 - [ ] Per-user permission mode overrides
 - [ ] Session tagging and search
 
@@ -474,7 +627,8 @@ Contributions are welcome! Whether it's a bug fix, a new feature, or improved do
 
 - 🖥️ Web dashboard for session monitoring
 - 🌐 Multi-server (multi-guild) support
-- 🔔 Webhook / notification integrations (Slack, email)
+- 💬 Port remaining Discord commands to Slack/WhatsApp (`/template`, `/schedule`, `/budget`, etc.)
+- 📲 Telegram adapter (implement `PlatformAdapter` for Telegram Bot API)
 - 🌍 Localization / i18n support
 - 📈 Usage analytics and cost alerts
 - 🔐 Per-user permission mode overrides
@@ -484,8 +638,11 @@ Contributions are welcome! Whether it's a bug fix, a new feature, or improved do
 ## ⚠️ Known Limitations
 
 - 🏠 Runs locally — the host machine (or Docker container) must stay on; requires Claude Code CLI to be authenticated
-- 📺 Single-guild operation with user whitelist (channel-per-repo routing within the guild)
+- 📺 Discord: single-guild operation with user whitelist (channel-per-repo routing within the guild)
 - 💾 Active session state is in-memory (lost on restart), but sessions are persisted for crash recovery with Retry/Dismiss. Queued sessions, templates, schedules, and daily summaries are all persisted to JSON files in the `DATA_DIR`
+- 📲 WhatsApp support is experimental — uses `whatsapp-web.js` (unofficial library), requires Puppeteer, and only supports direct chats (no group chats)
+- 💬 Slack and WhatsApp currently support basic commands (`/prompt`, `/stop`, `/status`). Advanced Discord features like `/template`, `/schedule`, `/budget`, `/repos` are Discord-only for now
+- 📊 Daily summaries, session recovery, and schedule runner are Discord-only features
 
 ---
 

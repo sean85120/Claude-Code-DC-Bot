@@ -72,6 +72,7 @@ describe('status execute', () => {
     const store = new StateStore();
     store.setSession('thread-1', {
       sessionId: null,
+      platform: 'discord',
       status: 'running',
       threadId: 'thread-1',
       userId: 'user-1',

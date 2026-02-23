@@ -1,4 +1,4 @@
-import type { APIEmbed, APIActionRowComponent, APIButtonComponent } from 'discord.js';
+import type { RichMessage, ActionButton } from './platforms/types.js';
 
 // ─── Projects ────────────────────────────────────────
 
@@ -64,6 +64,26 @@ export interface BotConfig {
   showGitSummary: boolean;
   /** Directory for persistent data files (default: process.cwd()) */
   dataDir: string;
+
+  // ─── Platform Toggles ─────────────────────────────
+  /** Enable Discord platform (default: true) */
+  discordEnabled: boolean;
+  /** Enable Slack platform (default: false) */
+  slackEnabled: boolean;
+  /** Enable WhatsApp platform (default: false) */
+  whatsappEnabled: boolean;
+
+  // ─── Slack Config ─────────────────────────────────
+  /** Slack Bot Token (xoxb-...) */
+  slackBotToken: string;
+  /** Slack App-Level Token for Socket Mode (xapp-...) */
+  slackAppToken: string;
+  /** Slack Signing Secret */
+  slackSigningSecret: string;
+
+  // ─── WhatsApp Config ──────────────────────────────
+  /** Comma-separated list of allowed WhatsApp numbers (e.g. "1234567890,0987654321") */
+  whatsappAllowedNumbers: string[];
 }
 
 // ─── Session ────────────────────────────────────────
@@ -84,6 +104,8 @@ export interface SessionState {
   status: SessionStatus;
   threadId: string;
   userId: string;
+  /** Platform that owns this session */
+  platform: import('./platforms/types.js').PlatformType;
   startedAt: Date;
   lastActivityAt: Date;
   promptText: string;
@@ -315,10 +337,10 @@ export interface ToolDisplayInfo {
   fields?: Array<{ name: string; value: string; inline: boolean }>;
 }
 
-/** Combined Discord message structure (Embed + Buttons + Text) */
+/** Combined message structure (Rich messages + Buttons + Text) */
 export interface DisplayMessage {
-  embeds?: APIEmbed[];
-  components?: APIActionRowComponent<APIButtonComponent>[];
+  richMessages?: RichMessage[];
+  buttons?: ActionButton[];
   content?: string;
 }
 

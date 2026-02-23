@@ -1,6 +1,7 @@
-import { MessageFlags, type Interaction, type Client, type ThreadChannel } from 'discord.js';
+import { MessageFlags, type Interaction, type Client } from 'discord.js';
 import type { BotConfig, SessionState } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
+import type { PlatformAdapter } from '../platforms/types.js';
 import * as statusCmd from '../commands/status.js';
 import * as stopCmd from '../commands/stop.js';
 import * as promptCmd from '../commands/prompt.js';
@@ -28,7 +29,6 @@ import type { BudgetStore } from '../effects/budget-store.js';
 import type { TemplateStore } from '../effects/template-store.js';
 import type { ScheduleStore } from '../effects/schedule-store.js';
 import type { LogStore } from '../effects/log-store.js';
-import { sendInThread, sendTextInThread } from '../effects/discord-sender.js';
 import { buildSessionStartEmbed, buildErrorEmbed } from '../modules/embeds.js';
 import { truncate } from '../modules/formatters.js';
 import { canExecuteCommand, isAllowedCwd } from '../modules/permissions.js';
@@ -41,6 +41,7 @@ export interface InteractionHandlerDeps {
   config: BotConfig;
   store: StateStore;
   client: Client;
+  adapter: PlatformAdapter;
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>;
   rateLimitStore: RateLimitStore;
   usageStore: UsageStore;
@@ -267,7 +268,6 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
             await interaction.reply({ content: '⚠️ Thread no longer exists', flags: [MessageFlags.Ephemeral] });
             return;
           }
-          const thread = channel as ThreadChannel;
 
           // Check no active session in this thread (running, awaiting_permission, or waiting_input)
           const existingSession = deps.store.getSession(threadId);
@@ -301,6 +301,7 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
           const abortController = new AbortController();
           const session: SessionState = {
             sessionId: null,
+            platform: 'discord',
             status: 'running',
             threadId,
             userId: interaction.user.id,
@@ -326,14 +327,14 @@ export function createInteractionHandler(deps: InteractionHandlerDeps) {
 
           // Send start embed
           const startEmbed = buildSessionStartEmbed(promptText, cwd, model);
-          await sendInThread(thread, startEmbed);
+          await deps.adapter.sendRichMessage(threadId, startEmbed);
 
           // Start query
           deps.startClaudeQuery(session, threadId).catch(async (error) => {
             log.error({ err: error, threadId, prompt: truncate(promptText, 40) }, 'Recovery retry error');
             const errorEmbed = buildErrorEmbed(error instanceof Error ? error.message : String(error));
             try {
-              await sendInThread(thread, errorEmbed);
+              await deps.adapter.sendRichMessage(threadId, errorEmbed);
             } catch {
               // Thread may no longer exist
             }

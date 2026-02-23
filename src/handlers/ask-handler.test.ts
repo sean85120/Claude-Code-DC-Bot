@@ -23,6 +23,7 @@ vi.mock('../modules/embeds.js', () => ({
 function makeSession(threadId: string): SessionState {
   return {
     sessionId: null,
+    platform: 'discord',
     status: 'awaiting_permission',
     threadId,
     userId: 'u1',
