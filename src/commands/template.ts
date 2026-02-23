@@ -23,6 +23,7 @@ import {
 } from '../effects/discord-sender.js';
 import { resolveProjectChannel } from '../effects/channel-manager.js';
 import { logger } from '../effects/logger.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 
 const log = logger.child({ module: 'Template' });
 
@@ -309,7 +310,7 @@ async function handleRun(
   store.setSession(thread.id, session);
 
   const startEmbed = buildSessionStartEmbed(message, cwd, model);
-  await sendInThread(thread, startEmbed);
+  await sendInThread(thread, richMessageToEmbed(startEmbed));
 
   await editReply(interaction, {
     content: `🚀 Template "${name}" started → <#${thread.id}>`,
@@ -319,7 +320,7 @@ async function handleRun(
     log.error({ err: error, threadId: thread.id, template: name }, 'Template query error');
     const errorEmbed = buildErrorEmbed(error instanceof Error ? error.message : String(error));
     try {
-      await sendInThread(thread, errorEmbed);
+      await sendInThread(thread, richMessageToEmbed(errorEmbed));
     } catch {
       // Thread may no longer exist
     }

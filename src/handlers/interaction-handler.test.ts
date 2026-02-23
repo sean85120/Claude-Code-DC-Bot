@@ -89,13 +89,26 @@ const mockConfig: BotConfig = {
   budgetMonthlyLimitUsd: 0,
   showGitSummary: true,
   dataDir: '/tmp/test-data',
+  discordEnabled: true,
+  slackEnabled: false,
+  whatsappEnabled: false,
+  slackBotToken: '',
+  slackAppToken: '',
+  slackSigningSecret: '',
+  whatsappAllowedNumbers: [],
 };
+
+const mockAdapter = {
+  sendRichMessage: vi.fn().mockResolvedValue({ id: 'msg1', threadId: 't1', platform: 'discord' }),
+  sendText: vi.fn().mockResolvedValue({ id: 'msg2', threadId: 't1', platform: 'discord' }),
+} as never;
 
 function makeDeps(store?: StateStore) {
   return {
     config: mockConfig,
     store: store || new StateStore(),
     client: {} as never,
+    adapter: mockAdapter,
     startClaudeQuery: vi.fn().mockResolvedValue(undefined),
     rateLimitStore: { getEntry: vi.fn(), setEntry: vi.fn() } as unknown as RateLimitStore,
     usageStore: new UsageStore(),
@@ -479,6 +492,10 @@ describe('createInteractionHandler', () => {
               send: vi.fn().mockResolvedValue({ id: 'msg1' }),
             }),
           },
+        } as never,
+        adapter: {
+          sendRichMessage: vi.fn().mockResolvedValue({ id: 'msg1', threadId: 't1', platform: 'discord' }),
+          sendText: vi.fn().mockResolvedValue({ id: 'msg2', threadId: 't1', platform: 'discord' }),
         } as never,
         startClaudeQuery: vi.fn().mockResolvedValue(undefined),
         rateLimitStore: { getEntry: vi.fn(), setEntry: vi.fn() } as unknown as RateLimitStore,

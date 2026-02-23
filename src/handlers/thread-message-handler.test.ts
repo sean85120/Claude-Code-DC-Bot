@@ -6,20 +6,17 @@ vi.mock('../effects/logger.js', () => ({
 vi.mock('../modules/embeds.js', () => ({
   buildFollowUpEmbed: vi.fn().mockReturnValue({ title: 'follow-up' }),
 }));
-vi.mock('../effects/discord-sender.js', () => ({
-  sendInThread: vi.fn().mockResolvedValue({ id: 'msg-1' }),
-}));
 vi.mock('../modules/permissions.js', () => ({
   isUserAuthorized: vi.fn().mockReturnValue(true),
 }));
 
-import type { Message, Client } from 'discord.js';
+import type { Message } from 'discord.js';
+import type { PlatformAdapter } from '../platforms/types.js';
 import type { BotConfig, SessionState } from '../types.js';
 import type { ThreadMessageHandlerDeps } from './thread-message-handler.js';
 import { StateStore } from '../effects/state-store.js';
 import { classifyAttachment, createThreadMessageHandler } from './thread-message-handler.js';
 import { buildFollowUpEmbed } from '../modules/embeds.js';
-import { sendInThread } from '../effects/discord-sender.js';
 import { isUserAuthorized } from '../modules/permissions.js';
 
 describe('classifyAttachment', () => {
@@ -163,6 +160,16 @@ function makeMessage(overrides?: Record<string, unknown>): Message {
   return merged as unknown as Message;
 }
 
+function makeMockAdapter() {
+  return {
+    platform: 'discord' as const,
+    messageLimit: 2000,
+    sendRichMessage: vi.fn().mockResolvedValue({ id: 'msg1', threadId: 't1', platform: 'discord' }),
+    sendText: vi.fn().mockResolvedValue([]),
+    downloadAttachments: vi.fn().mockResolvedValue([]),
+  } as unknown as PlatformAdapter;
+}
+
 function makeDeps(store: StateStore, overrides?: Partial<ThreadMessageHandlerDeps>): ThreadMessageHandlerDeps {
   return {
     config: {
@@ -184,7 +191,7 @@ function makeDeps(store: StateStore, overrides?: Partial<ThreadMessageHandlerDep
       sessionIdleTimeoutMs: 1800000,
     } as BotConfig,
     store,
-    client: {} as unknown as Client,
+    adapter: makeMockAdapter(),
     startClaudeQuery: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -292,7 +299,7 @@ describe('createThreadMessageHandler', () => {
 
     await handler(message);
 
-    expect(message.reply).toHaveBeenCalledWith('⚠️ Unable to resume conversation: missing Session ID');
+    expect((deps.adapter as any).sendText).toHaveBeenCalledWith('thread-1', '⚠️ Unable to resume conversation: missing Session ID');
     expect(deps.startClaudeQuery).not.toHaveBeenCalled();
   });
 
@@ -309,8 +316,8 @@ describe('createThreadMessageHandler', () => {
     expect(session?.status).toBe('running');
     expect(session?.promptText).toBe('What is the next step?');
 
-    // Verify sendInThread was called
-    expect(sendInThread).toHaveBeenCalled();
+    // Verify adapter.sendRichMessage was called
+    expect((deps.adapter as any).sendRichMessage).toHaveBeenCalled();
 
     // Verify buildFollowUpEmbed was called
     expect(buildFollowUpEmbed).toHaveBeenCalledWith('What is the next step?', 0, []);

@@ -1,12 +1,12 @@
-import type { Message, Client } from 'discord.js';
+import type { Message } from 'discord.js';
 import type { BotConfig, SessionState, FileAttachment } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
+import type { PlatformAdapter, PlatformInteraction } from '../platforms/types.js';
 import { logger } from '../effects/logger.js';
 import { isUserAuthorized } from '../modules/permissions.js';
 
 const log = logger.child({ module: 'Thread' });
 import { buildFollowUpEmbed } from '../modules/embeds.js';
-import { sendInThread } from '../effects/discord-sender.js';
 
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const SUPPORTED_TEXT_EXTENSIONS = [
@@ -27,7 +27,7 @@ const MAX_TEXT_FILE_SIZE = 1 * 1024 * 1024; // 1MB (smaller limit for text files
 export interface ThreadMessageHandlerDeps {
   config: BotConfig;
   store: StateStore;
-  client: Client;
+  adapter: PlatformAdapter;
   startClaudeQuery: (session: SessionState, threadId: string) => Promise<void>;
 }
 
@@ -51,7 +51,7 @@ export function classifyAttachment(contentType: string | null, filename: string)
 }
 
 /**
- * Downloads file attachments from a Discord message
+ * Downloads file attachments from a Discord message (legacy helper, used by Discord adapter)
  */
 async function downloadAttachments(message: Message): Promise<FileAttachment[]> {
   const files: FileAttachment[] = [];
@@ -90,20 +90,37 @@ async function downloadAttachments(message: Message): Promise<FileAttachment[]> 
 }
 
 /**
- * Creates the thread message handler, listening for follow-up messages from users in threads and starting resume queries
+ * Creates the thread message handler, listening for follow-up messages from users in threads and starting resume queries.
+ * Supports both PlatformInteraction (new adapter path) and Discord Message (legacy path).
  *
  * @param deps - Dependencies required by the thread message handler
- * @returns An async function that handles Discord message events
+ * @returns An async function that handles thread messages
  */
 export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
-  return async function handleThreadMessage(message: Message): Promise<void> {
-    // Ignore messages from the bot itself
-    if (message.author.bot) return;
+  return async function handleThreadMessage(input: Message | PlatformInteraction): Promise<void> {
+    // Determine if this is a PlatformInteraction or a raw Discord Message
+    let userId: string;
+    let threadId: string;
+    let messageContent: string;
+    let fileAttachments: FileAttachment[];
 
-    // Only process messages in threads
-    if (!message.channel.isThread()) return;
-
-    const threadId = message.channel.id;
+    if ('platform' in input) {
+      // PlatformInteraction path
+      const pi = input as PlatformInteraction;
+      userId = pi.userId;
+      threadId = pi.threadId;
+      messageContent = (pi.text ?? '').trim();
+      fileAttachments = await deps.adapter.downloadAttachments(pi);
+    } else {
+      // Legacy Discord Message path
+      const message = input as Message;
+      if (message.author.bot) return;
+      if (!message.channel.isThread()) return;
+      userId = message.author.id;
+      threadId = message.channel.id;
+      messageContent = message.content.trim();
+      fileAttachments = await downloadAttachments(message);
+    }
 
     // Verify this thread has a corresponding session
     const { store } = deps;
@@ -114,18 +131,14 @@ export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
     if (session.status !== 'waiting_input') return;
 
     // Check user authorization
-    if (!isUserAuthorized(message.author.id, deps.config.allowedUserIds)) return;
-
-    // Get follow-up text and files
-    const followUpText = message.content.trim();
-    const fileAttachments = await downloadAttachments(message);
+    if (!isUserAuthorized(userId, deps.config.allowedUserIds)) return;
 
     // Must have text or files
-    if (!followUpText && fileAttachments.length === 0) return;
+    if (!messageContent && fileAttachments.length === 0) return;
 
     // Verify there is a sessionId available for resume
     if (!session.sessionId) {
-      await message.reply('⚠️ Unable to resume conversation: missing Session ID');
+      await deps.adapter.sendText(threadId, '⚠️ Unable to resume conversation: missing Session ID');
       return;
     }
 
@@ -138,7 +151,7 @@ export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
       .map((f) => `--- ${f.filename} ---\n${f.textContent}`)
       .join('\n\n');
 
-    const promptParts = [followUpText, textFileContents].filter(Boolean);
+    const promptParts = [messageContent, textFileContents].filter(Boolean);
     const promptText = promptParts.join('\n\n') || '(Please see attachments)';
 
     // Non-text files (images + PDFs) need to be sent as content blocks
@@ -162,17 +175,17 @@ export function createThreadMessageHandler(deps: ThreadMessageHandlerDeps) {
       updatedSession.transcript.push({
         timestamp: new Date(),
         type: 'user',
-        content: `${followUpText || ''}${attachmentSummary}`.slice(0, 2000),
+        content: `${messageContent || ''}${attachmentSummary}`.slice(0, 2000),
       });
     }
 
-    // Send follow-up confirmation Embed
+    // Send follow-up confirmation embed
     const embed = buildFollowUpEmbed(
-      followUpText || '(See attachments)',
+      messageContent || '(See attachments)',
       fileAttachments.length,
       fileAttachments.map((f) => f.filename),
     );
-    await sendInThread(message.channel, embed);
+    await deps.adapter.sendRichMessage(threadId, embed);
 
     // Start resume query
     if (!updatedSession) return;

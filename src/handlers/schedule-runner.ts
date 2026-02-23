@@ -7,6 +7,7 @@ import { buildSessionStartEmbed } from '../modules/embeds.js';
 import { sendInThread } from '../effects/discord-sender.js';
 import { truncate } from '../modules/formatters.js';
 import { isAllowedCwd } from '../modules/permissions.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 import { logger } from '../effects/logger.js';
 
 const log = logger.child({ module: 'ScheduleRunner' });
@@ -147,7 +148,7 @@ async function runSchedule(schedule: ScheduledPrompt, deps: ScheduleRunnerDeps):
     store.setSession(thread.id, session);
 
     const startEmbed = buildSessionStartEmbed(schedule.promptText, schedule.cwd, model);
-    await sendInThread(thread, startEmbed);
+    await sendInThread(thread, richMessageToEmbed(startEmbed));
 
     // Notify creator
     await thread.send(`<@${schedule.createdBy}> Scheduled prompt **${schedule.name}** is running.`);

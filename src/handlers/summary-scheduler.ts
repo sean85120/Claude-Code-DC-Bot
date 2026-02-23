@@ -3,6 +3,7 @@ import type { BotConfig } from '../types.js';
 import type { DailySummaryStore } from '../effects/daily-summary-store.js';
 import { groupSessionsByRepo, buildDailySummaryEmbed } from '../modules/daily-summary.js';
 import { resolveSummaryChannel } from '../effects/summary-channel.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 import { logger } from '../effects/logger.js';
 import { formatDuration } from '../modules/formatters.js';
 
@@ -52,7 +53,7 @@ export async function postDailySummary(
     const embed = buildDailySummaryEmbed(record, repoSummaries);
 
     const channel = await resolveSummaryChannel(client, config);
-    await channel.send({ embeds: [embed] });
+    await channel.send({ embeds: [richMessageToEmbed(embed)] });
 
     log.info(
       { date: record.date, sessions: record.sessions.length, cost: record.totalCostUsd },

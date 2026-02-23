@@ -50,6 +50,19 @@ export function parseConfig(env: Record<string, string | undefined>): BotConfig 
     budgetMonthlyLimitUsd: safeParseFloat(env.BUDGET_MONTHLY_LIMIT_USD, 0),
     showGitSummary: env.SHOW_GIT_SUMMARY !== 'false',
     dataDir: env.DATA_DIR || process.cwd(),
+
+    // Platform toggles
+    discordEnabled: env.DISCORD_ENABLED !== 'false',
+    slackEnabled: env.SLACK_ENABLED === 'true',
+    whatsappEnabled: env.WHATSAPP_ENABLED === 'true',
+
+    // Slack config
+    slackBotToken: env.SLACK_BOT_TOKEN ?? '',
+    slackAppToken: env.SLACK_APP_TOKEN ?? '',
+    slackSigningSecret: env.SLACK_SIGNING_SECRET ?? '',
+
+    // WhatsApp config
+    whatsappAllowedNumbers: parseCommaSeparated(env.WHATSAPP_ALLOWED_NUMBERS),
   };
 }
 
@@ -61,15 +74,34 @@ export function parseConfig(env: Record<string, string | undefined>): BotConfig 
 export function validateConfig(config: BotConfig): string[] {
   const errors: string[] = [];
 
-  if (!config.discordToken) {
-    errors.push('DISCORD_BOT_TOKEN is not set');
+  // At least one platform must be enabled
+  if (!config.discordEnabled && !config.slackEnabled && !config.whatsappEnabled) {
+    errors.push('At least one platform must be enabled (DISCORD_ENABLED, SLACK_ENABLED, or WHATSAPP_ENABLED)');
   }
-  if (!config.discordGuildId) {
-    errors.push('DISCORD_GUILD_ID is not set');
+
+  // Discord-specific validation
+  if (config.discordEnabled) {
+    if (!config.discordToken) {
+      errors.push('DISCORD_BOT_TOKEN is not set');
+    }
+    if (!config.discordGuildId) {
+      errors.push('DISCORD_GUILD_ID is not set');
+    }
+    if (!config.discordChannelId) {
+      errors.push('DISCORD_CHANNEL_ID is not set');
+    }
   }
-  if (!config.discordChannelId) {
-    errors.push('DISCORD_CHANNEL_ID is not set');
+
+  // Slack-specific validation
+  if (config.slackEnabled) {
+    if (!config.slackBotToken) {
+      errors.push('SLACK_BOT_TOKEN is not set');
+    }
+    if (!config.slackAppToken) {
+      errors.push('SLACK_APP_TOKEN is not set');
+    }
   }
+
   if (config.allowedUserIds.length === 0) {
     errors.push('ALLOWED_USER_IDS is not set (at least one allowed user ID is required)');
   }

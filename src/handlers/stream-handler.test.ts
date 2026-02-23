@@ -1,21 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ThreadChannel, Message } from 'discord.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { StateStore } from '../effects/state-store.js';
 import { UsageStore } from '../effects/usage-store.js';
 import type { BotConfig } from '../types.js';
 import { handleSDKMessage } from './stream-handler.js';
 import type { StreamHandlerDeps } from './stream-handler.js';
+import type { PlatformAdapter, PlatformMessage } from '../platforms/types.js';
 
-// Mock discord-sender
-vi.mock('../effects/discord-sender.js', () => ({
-  sendInThread: vi.fn().mockResolvedValue({ id: 'msg1', edit: vi.fn() } as unknown as Message),
-  sendPlainInThread: vi.fn().mockResolvedValue({ id: 'stream1', edit: vi.fn() } as unknown as Message),
-  editMessageText: vi.fn().mockResolvedValue(undefined),
-  sendTextInThread: vi.fn().mockResolvedValue(undefined),
-}));
-
-import { sendInThread, sendPlainInThread, editMessageText, sendTextInThread } from '../effects/discord-sender.js';
+function makeMockAdapter() {
+  return {
+    platform: 'discord' as const,
+    messageLimit: 2000,
+    sendRichMessage: vi.fn().mockResolvedValue({ id: 'msg1', threadId: 't1', platform: 'discord' }),
+    sendText: vi.fn().mockResolvedValue([{ id: 'msg1', threadId: 't1', platform: 'discord' }]),
+    sendPlainText: vi.fn().mockResolvedValue({ id: 'stream1', threadId: 't1', platform: 'discord' }),
+    editText: vi.fn().mockResolvedValue(undefined),
+    editRichMessage: vi.fn().mockResolvedValue(undefined),
+    deleteMessage: vi.fn().mockResolvedValue(undefined),
+    mentionUser: vi.fn((id: string) => `<@${id}>`),
+  } as unknown as PlatformAdapter;
+}
 
 function makeSession(threadId: string, store: StateStore) {
   store.setSession(threadId, {
@@ -50,7 +54,7 @@ function makeDeps(store: StateStore, usageStore: UsageStore, configOverrides?: P
   return {
     store,
     threadId: 't1',
-    thread: { id: 't1' } as unknown as ThreadChannel,
+    adapter: makeMockAdapter(),
     cwd: '/test',
     streamUpdateIntervalMs: 2000,
     usageStore,
@@ -61,7 +65,7 @@ function makeDeps(store: StateStore, usageStore: UsageStore, configOverrides?: P
 function makeStreamState() {
   return {
     currentText: '',
-    currentMessage: null as Message | null,
+    currentMessage: null as PlatformMessage | null,
     lastUpdateTime: 0,
     updateTimer: null as ReturnType<typeof setTimeout> | null,
   };
@@ -114,6 +118,7 @@ describe('handleSDKMessage', () => {
     it('sends plain text when text exists', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -124,13 +129,14 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendTextInThread).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(sendTextInThread).mock.calls[0][1]).toBe('Hello world');
+      expect(adapter.sendText).toHaveBeenCalledTimes(1);
+      expect(adapter.sendText.mock.calls[0][1]).toBe('Hello world');
     });
 
     it('does not send when no text', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -141,12 +147,13 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessage).not.toHaveBeenCalled();
     });
 
     it('sends long text as plain text (auto-chunked)', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
       const longText = 'x'.repeat(5000);
 
       await handleSDKMessage(
@@ -158,13 +165,14 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendTextInThread).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(sendTextInThread).mock.calls[0][1]).toBe(longText);
+      expect(adapter.sendText).toHaveBeenCalledTimes(1);
+      expect(adapter.sendText.mock.calls[0][1]).toBe(longText);
     });
 
     it('edits existing streaming message to final text', async () => {
       const deps = makeDeps(store, usageStore);
-      const existingMsg = { id: 'existing', delete: vi.fn() } as unknown as Message;
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
+      const existingMsg: PlatformMessage = { id: 'existing', threadId: 't1', platform: 'discord' as const };
       const state = makeStreamState();
       state.currentMessage = existingMsg;
 
@@ -177,14 +185,15 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(editMessageText).toHaveBeenCalledWith(existingMsg, 'Updated');
-      expect(existingMsg.delete).not.toHaveBeenCalled();
-      expect(sendTextInThread).not.toHaveBeenCalled();
+      expect(adapter.editText).toHaveBeenCalledWith(existingMsg, 'Updated');
+      expect(adapter.deleteMessage).not.toHaveBeenCalled();
+      expect(adapter.sendText).not.toHaveBeenCalled();
     });
 
     it('deletes streaming message and sends chunked text for long content', async () => {
       const deps = makeDeps(store, usageStore);
-      const existingMsg = { id: 'existing', delete: vi.fn() } as unknown as Message;
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
+      const existingMsg: PlatformMessage = { id: 'existing', threadId: 't1', platform: 'discord' as const };
       const state = makeStreamState();
       state.currentMessage = existingMsg;
       const longText = 'x'.repeat(5000);
@@ -198,16 +207,17 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(existingMsg.delete).toHaveBeenCalledTimes(1);
-      expect(sendTextInThread).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(sendTextInThread).mock.calls[0][1]).toBe(longText);
+      expect(adapter.deleteMessage).toHaveBeenCalledTimes(1);
+      expect(adapter.sendText).toHaveBeenCalledTimes(1);
+      expect(adapter.sendText.mock.calls[0][1]).toBe(longText);
     });
 
     it('resets stream state (after editing)', async () => {
       const deps = makeDeps(store, usageStore);
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
       const state = makeStreamState();
       state.currentText = 'accumulated';
-      state.currentMessage = { id: 'msg' } as unknown as Message;
+      state.currentMessage = { id: 'msg', threadId: 't1', platform: 'discord' as const };
 
       await handleSDKMessage(
         {
@@ -218,7 +228,7 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(editMessageText).toHaveBeenCalled();
+      expect(adapter.editText).toHaveBeenCalled();
       expect(state.currentText).toBe('');
       expect(state.currentMessage).toBeNull();
     });
@@ -247,6 +257,7 @@ describe('handleSDKMessage', () => {
     it('extracts and records tool calls', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -265,12 +276,13 @@ describe('handleSDKMessage', () => {
       expect(session?.toolCount).toBe(1);
       expect(session?.tools['Read']).toBe(1);
       // Tool embed sent
-      expect(sendInThread).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessage).toHaveBeenCalledTimes(1);
     });
 
     it('handles text + tool calls simultaneously', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -287,8 +299,8 @@ describe('handleSDKMessage', () => {
       );
 
       // Plain text 1 time + tool embed 1 time
-      expect(sendTextInThread).toHaveBeenCalledTimes(1);
-      expect(sendInThread).toHaveBeenCalledTimes(1);
+      expect(adapter.sendText).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -296,6 +308,7 @@ describe('handleSDKMessage', () => {
     it('skips Read tool embed when hideReadResults is true', async () => {
       const deps = makeDeps(store, usageStore, { hideReadResults: true });
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -315,12 +328,13 @@ describe('handleSDKMessage', () => {
       expect(session?.toolCount).toBe(1);
       expect(session?.tools['Read']).toBe(1);
       // But embed is NOT sent
-      expect(sendInThread).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessage).not.toHaveBeenCalled();
     });
 
     it('sends Read tool embed when hideReadResults is false', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -335,12 +349,13 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessage).toHaveBeenCalledTimes(1);
     });
 
     it('still sends non-Read tool embeds when hideReadResults is true', async () => {
       const deps = makeDeps(store, usageStore, { hideReadResults: true });
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -355,7 +370,7 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -363,6 +378,7 @@ describe('handleSDKMessage', () => {
     it('skips Glob embed when hideSearchResults is true', async () => {
       const deps = makeDeps(store, usageStore, { hideSearchResults: true });
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -379,12 +395,13 @@ describe('handleSDKMessage', () => {
 
       const session = store.getSession('t1');
       expect(session?.toolCount).toBe(1);
-      expect(sendInThread).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessage).not.toHaveBeenCalled();
     });
 
     it('skips Grep embed when hideSearchResults is true', async () => {
       const deps = makeDeps(store, usageStore, { hideSearchResults: true });
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -399,12 +416,13 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessage).not.toHaveBeenCalled();
     });
 
     it('still sends non-search embeds when hideSearchResults is true', async () => {
       const deps = makeDeps(store, usageStore, { hideSearchResults: true });
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -419,7 +437,7 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).toHaveBeenCalledTimes(1);
+      expect(adapter.sendRichMessage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -427,6 +445,7 @@ describe('handleSDKMessage', () => {
     it('skips all tool embeds when hideAllToolEmbeds is true', async () => {
       const deps = makeDeps(store, usageStore, { hideAllToolEmbeds: true });
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -445,7 +464,7 @@ describe('handleSDKMessage', () => {
 
       const session = store.getSession('t1');
       expect(session?.toolCount).toBe(3);
-      expect(sendInThread).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessage).not.toHaveBeenCalled();
     });
 
     it('still records transcript when hideAllToolEmbeds is true', async () => {
@@ -475,6 +494,7 @@ describe('handleSDKMessage', () => {
     it('sends compact embed when compactToolEmbeds is true', async () => {
       const deps = makeDeps(store, usageStore, { compactToolEmbeds: true });
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -489,8 +509,8 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).toHaveBeenCalledTimes(1);
-      const embed = vi.mocked(sendInThread).mock.calls[0][1] as Record<string, unknown>;
+      expect(adapter.sendRichMessage).toHaveBeenCalledTimes(1);
+      const embed = adapter.sendRichMessage.mock.calls[0][1] as Record<string, unknown>;
       // Compact embeds have description with emoji+name but no author/title/fields
       expect(embed.description).toContain('Bash');
       expect(embed.author).toBeUndefined();
@@ -501,6 +521,7 @@ describe('handleSDKMessage', () => {
     it('hideAllToolEmbeds takes precedence over compactToolEmbeds', async () => {
       const deps = makeDeps(store, usageStore, { hideAllToolEmbeds: true, compactToolEmbeds: true });
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -515,7 +536,7 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -596,6 +617,7 @@ describe('handleSDKMessage', () => {
     it('sends stats embed on success (without response text)', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -615,8 +637,8 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).toHaveBeenCalledTimes(1);
-      const embed = vi.mocked(sendInThread).mock.calls[0][1] as Record<string, unknown>;
+      expect(adapter.sendRichMessage).toHaveBeenCalledTimes(1);
+      const embed = adapter.sendRichMessage.mock.calls[0][1] as Record<string, unknown>;
       // Response text is not included in description (already sent during assistant phase)
       expect(embed.description).toBeUndefined();
     });
@@ -624,6 +646,7 @@ describe('handleSDKMessage', () => {
     it('sends error embed on failure', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         {
@@ -643,8 +666,8 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).toHaveBeenCalledTimes(1);
-      const embed = vi.mocked(sendInThread).mock.calls[0][1] as Record<string, unknown>;
+      expect(adapter.sendRichMessage).toHaveBeenCalledTimes(1);
+      const embed = adapter.sendRichMessage.mock.calls[0][1] as Record<string, unknown>;
       expect(embed.description).toContain('Something broke');
     });
 
@@ -707,6 +730,7 @@ describe('handleSDKMessage', () => {
     it('tool_progress does nothing', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         { type: 'tool_progress' } as unknown as SDKMessage,
@@ -714,12 +738,13 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessage).not.toHaveBeenCalled();
     });
 
     it('unknown type does nothing', async () => {
       const deps = makeDeps(store, usageStore);
       const state = makeStreamState();
+      const adapter = deps.adapter as unknown as ReturnType<typeof makeMockAdapter>;
 
       await handleSDKMessage(
         { type: 'unknown_type' } as unknown as SDKMessage,
@@ -727,7 +752,7 @@ describe('handleSDKMessage', () => {
         state,
       );
 
-      expect(sendInThread).not.toHaveBeenCalled();
+      expect(adapter.sendRichMessage).not.toHaveBeenCalled();
     });
   });
 

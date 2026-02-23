@@ -3,6 +3,7 @@ import type { PendingApproval } from '../types.js';
 import type { StateStore } from '../effects/state-store.js';
 import { buildAskQuestionStepEmbed, buildAskCompletedEmbed } from '../modules/embeds.js';
 import { buildQuestionButtons, buildAnswerModal } from '../effects/discord-sender.js';
+import { richMessageToEmbed } from '../platforms/discord/converter.js';
 import { logger } from '../effects/logger.js';
 
 const log = logger.child({ module: 'AskHandler' });
@@ -30,7 +31,7 @@ async function advanceOrFinalize(
     const summaryEmbed = buildAskCompletedEmbed(askState);
 
     if (interaction.isButton()) {
-      await interaction.update({ embeds: [summaryEmbed], components: [] });
+      await interaction.update({ embeds: [richMessageToEmbed(summaryEmbed)], components: [] });
     } else {
       // Modal submit: reply to modal, then edit original message
       const lastAnswer = askState.collectedAnswers[String(askState.currentQuestionIndex)] || '';
@@ -39,7 +40,7 @@ async function advanceOrFinalize(
         const channel = interaction.channel ?? await interaction.client.channels.fetch(interaction.channelId!);
         if (channel && 'messages' in channel) {
           const msg = await channel.messages.fetch(pending.messageId);
-          await msg.edit({ embeds: [summaryEmbed], components: [] });
+          await msg.edit({ embeds: [richMessageToEmbed(summaryEmbed)], components: [] });
         }
       } catch (e) {
         log.warn({ threadId, error: e }, 'Unable to update original message');
@@ -62,7 +63,7 @@ async function advanceOrFinalize(
     const nextButtons = buildQuestionButtons(threadId, askState);
 
     if (interaction.isButton()) {
-      await interaction.update({ embeds: [nextEmbed], components: nextButtons });
+      await interaction.update({ embeds: [richMessageToEmbed(nextEmbed)], components: nextButtons });
     } else {
       // Modal submit
       const lastAnswer = askState.collectedAnswers[String(nextIdx - 1)] || '';
@@ -71,7 +72,7 @@ async function advanceOrFinalize(
         const channel = interaction.channel ?? await interaction.client.channels.fetch(interaction.channelId!);
         if (channel && 'messages' in channel) {
           const msg = await channel.messages.fetch(pending.messageId);
-          await msg.edit({ embeds: [nextEmbed], components: nextButtons });
+          await msg.edit({ embeds: [richMessageToEmbed(nextEmbed)], components: nextButtons });
         }
       } catch (e) {
         log.warn({ threadId, error: e }, 'Unable to update original message');
@@ -123,7 +124,7 @@ export async function handleAskOptionClick(
 
     const embed = buildAskQuestionStepEmbed(askState);
     const buttons = buildQuestionButtons(threadId, askState);
-    await interaction.update({ embeds: [embed], components: buttons });
+    await interaction.update({ embeds: [richMessageToEmbed(embed)], components: buttons });
   } else {
     // Single-select: record answer and advance
     const selectedLabel = askState.questions[qIdx].options[optIdx]?.label || `Option ${optIdx + 1}`;

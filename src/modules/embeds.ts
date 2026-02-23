@@ -1,4 +1,4 @@
-import type { APIEmbed } from 'discord.js';
+import type { RichMessage } from '../platforms/types.js';
 import type {
   AskState,
   SessionState,
@@ -31,21 +31,19 @@ export function buildToolUseEmbed(
   toolInput: Record<string, unknown>,
   cwd: string,
   meta?: { model?: string; permissionMode?: string; sessionId?: string },
-): APIEmbed {
+): RichMessage {
   const emoji = TOOL_EMOJI[toolName] || '🔧';
   const display = formatToolInput(toolName, toolInput, cwd);
 
   return {
     color: COLORS.PreToolUse,
-    author: { name: `${emoji} ${toolName}` },
+    author: `${emoji} ${toolName}`,
     title: display.title,
     description: display.description,
     fields: display.fields,
     timestamp: new Date().toISOString(),
     footer: meta
-      ? {
-          text: buildFooterText(meta.model, meta.permissionMode, meta.sessionId),
-        }
+      ? buildFooterText(meta.model, meta.permissionMode, meta.sessionId)
       : undefined,
   };
 }
@@ -57,7 +55,7 @@ export function buildCompactToolEmbed(
   toolName: string,
   toolInput: Record<string, unknown>,
   cwd: string,
-): APIEmbed {
+): RichMessage {
   const emoji = TOOL_EMOJI[toolName] || '🔧';
   const display = formatToolInput(toolName, toolInput, cwd);
 
@@ -80,13 +78,13 @@ export function buildPermissionRequestEmbed(
   toolName: string,
   toolInput: Record<string, unknown>,
   cwd: string,
-): APIEmbed {
+): RichMessage {
   const emoji = TOOL_EMOJI[toolName] || '🔧';
   const display = formatToolInput(toolName, toolInput, cwd);
 
   return {
     color: COLORS.Permission,
-    author: { name: '🔐 Approval Required' },
+    author: '🔐 Approval Required',
     title: `${emoji} ${toolName} — ${display.title}`,
     description: display.description,
     fields: [
@@ -112,12 +110,12 @@ export function buildPermissionRequestEmbed(
 export function buildProgressEmbed(
   text: string,
   toolsUsed: number,
-): APIEmbed {
+): RichMessage {
   return {
     color: COLORS.Running,
-    author: { name: '⏳ Running' },
+    author: '⏳ Running',
     description: truncate(text, 4000),
-    footer: { text: `🔧 Used ${toolsUsed} tools` },
+    footer: `🔧 Used ${toolsUsed} tools`,
     timestamp: new Date().toISOString(),
   };
 }
@@ -133,12 +131,12 @@ export function buildProgressEmbed(
 export function buildStreamingTextEmbed(
   text: string,
   toolsUsed: number,
-): APIEmbed {
+): RichMessage {
   return {
     color: COLORS.Running,
-    author: { name: '💬 Responding...' },
+    author: '💬 Responding...',
     description: truncate(text, 4000),
-    footer: { text: `🔧 Used ${toolsUsed} tools` },
+    footer: `🔧 Used ${toolsUsed} tools`,
     timestamp: new Date().toISOString(),
   };
 }
@@ -154,7 +152,7 @@ export function buildStreamingTextEmbed(
 export function buildStopPreviewEmbed(
   session: SessionState,
   durationMs: number,
-): APIEmbed {
+): RichMessage {
   const toolList = Object.entries(session.tools)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
@@ -165,7 +163,7 @@ export function buildStopPreviewEmbed(
 
   return {
     color: COLORS.Notification,
-    author: { name: '⚠️ Confirm Stop' },
+    author: '⚠️ Confirm Stop',
     title: 'Are you sure you want to stop this task?',
     description: truncate(session.promptText, 200),
     fields: [
@@ -198,14 +196,14 @@ export function buildResultEmbed(
   usage?: TokenUsage,
   durationMs?: number,
   costUsd?: number,
-): APIEmbed {
+): RichMessage {
   const toolList = Object.entries(stats.tools)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([name, count]) => `${TOOL_EMOJI[name] || '🔧'} ${name}: **${count}**`)
     .join('\n');
 
-  const fields: APIEmbed['fields'] = [
+  const fields: RichMessage['fields'] = [
     {
       name: `📊 Tool Stats (${stats.toolCount} total)`,
       value: toolList || 'None',
@@ -256,7 +254,7 @@ export function buildResultEmbed(
 
   return {
     color: COLORS.Stop,
-    author: { name: '🏁 Task Complete' },
+    author: '🏁 Task Complete',
     title: 'Claude Code task completed',
     description: resultText ? truncate(resultText, 4000) : undefined,
     fields,
@@ -272,10 +270,10 @@ export function buildResultEmbed(
  * @param context - Optional error context description
  * @returns Error embed
  */
-export function buildErrorEmbed(error: string, context?: string): APIEmbed {
+export function buildErrorEmbed(error: string, context?: string): RichMessage {
   return {
     color: COLORS.Error,
-    author: { name: '❌ Error' },
+    author: '❌ Error',
     title: 'Execution Error',
     description: truncate(error, 4000),
     fields: context
@@ -296,11 +294,11 @@ export function buildErrorEmbed(error: string, context?: string): APIEmbed {
 export function buildStatusEmbed(
   session: SessionState | null,
   sessionUsage?: SessionUsageRecord,
-): APIEmbed {
+): RichMessage {
   if (!session) {
     return {
       color: COLORS.Info,
-      author: { name: 'ℹ️ Status' },
+      author: 'ℹ️ Status',
       title: 'No Active Session',
       description: 'No tasks running. Use `/prompt` to start a new task.',
       timestamp: new Date().toISOString(),
@@ -316,7 +314,7 @@ export function buildStatusEmbed(
     .map(([name, count]) => `${TOOL_EMOJI[name] || '🔧'} ${name}: **${count}**`)
     .join('\n');
 
-  const fields: APIEmbed['fields'] = [
+  const fields: RichMessage['fields'] = [
     { name: 'Working Directory', value: `\`${session.cwd}\``, inline: true },
     { name: 'Model', value: session.model, inline: true },
     { name: 'Duration', value: formatDuration(elapsed), inline: true },
@@ -348,7 +346,7 @@ export function buildStatusEmbed(
 
   return {
     color: session.status === 'running' ? COLORS.Running : COLORS.Info,
-    author: { name: `📋 Session Status — ${statusName}` },
+    author: `📋 Session Status — ${statusName}`,
     title: truncate(session.promptText, 100),
     fields,
     timestamp: new Date().toISOString(),
@@ -368,10 +366,10 @@ export function buildSessionStartEmbed(
   promptText: string,
   cwd: string,
   model: string,
-): APIEmbed {
+): RichMessage {
   return {
     color: COLORS.SessionStart,
-    author: { name: '🚀 Session Started' },
+    author: '🚀 Session Started',
     title: truncate(promptText, 100),
     fields: [
       { name: 'Working Directory', value: `\`${cwd}\``, inline: true },
@@ -392,7 +390,7 @@ export function buildSessionStartEmbed(
 export function buildStopConfirmEmbed(
   stats: { toolCount: number; tools: Record<string, number> },
   durationMs: number,
-): APIEmbed {
+): RichMessage {
   const toolList = Object.entries(stats.tools)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
@@ -401,7 +399,7 @@ export function buildStopConfirmEmbed(
 
   return {
     color: COLORS.Error,
-    author: { name: '🛑 Stopped' },
+    author: '🛑 Stopped',
     title: 'Task manually stopped',
     fields: [
       { name: 'Duration', value: formatDuration(durationMs), inline: true },
@@ -422,10 +420,10 @@ export function buildStopConfirmEmbed(
  * @param message - Notification message content
  * @returns Notification embed
  */
-export function buildNotificationEmbed(message: string): APIEmbed {
+export function buildNotificationEmbed(message: string): RichMessage {
   return {
     color: COLORS.Notification,
-    author: { name: '🔔 Notification' },
+    author: '🔔 Notification',
     description: message,
     timestamp: new Date().toISOString(),
   };
@@ -440,7 +438,7 @@ export function buildNotificationEmbed(message: string): APIEmbed {
  * @param filenames - List of attached file names
  * @returns Follow-up confirmation embed
  */
-export function buildFollowUpEmbed(promptText: string, fileCount = 0, filenames: string[] = []): APIEmbed {
+export function buildFollowUpEmbed(promptText: string, fileCount = 0, filenames: string[] = []): RichMessage {
   let description = truncate(promptText, 3900);
 
   if (fileCount > 0) {
@@ -452,7 +450,7 @@ export function buildFollowUpEmbed(promptText: string, fileCount = 0, filenames:
 
   return {
     color: COLORS.SessionStart,
-    author: { name: '💬 Follow-up' },
+    author: '💬 Follow-up',
     title: 'Processing follow-up...',
     description: truncate(description, 4000),
     timestamp: new Date().toISOString(),
@@ -465,10 +463,10 @@ export function buildFollowUpEmbed(promptText: string, fileCount = 0, filenames:
  * Build a waiting for input embed
  * @returns Waiting for input embed
  */
-export function buildWaitingInputEmbed(): APIEmbed {
+export function buildWaitingInputEmbed(): RichMessage {
   return {
     color: COLORS.WaitingInput,
-    author: { name: '⏸️ Waiting for Input' },
+    author: '⏸️ Waiting for Input',
     title: 'Task completed, waiting for follow-up',
     description: 'Type a message in this thread to continue. Use `/stop` to end.',
     timestamp: new Date().toISOString(),
@@ -484,7 +482,7 @@ export function buildWaitingInputEmbed(): APIEmbed {
  */
 export function buildMultiStatusEmbed(
   sessions: Map<string, SessionState>,
-): APIEmbed {
+): RichMessage {
   const entries = Array.from(sessions.entries());
   const description = entries
     .map(([threadId, s]) => {
@@ -496,7 +494,7 @@ export function buildMultiStatusEmbed(
 
   return {
     color: COLORS.Running,
-    author: { name: `📋 Active Sessions (${entries.length})` },
+    author: `📋 Active Sessions (${entries.length})`,
     description: truncate(description, 4000),
     timestamp: new Date().toISOString(),
   };
@@ -515,10 +513,10 @@ export function buildGlobalStatusEmbed(
   stats: GlobalUsageStats,
   activeSessions: Map<string, SessionState>,
   userUsage?: Map<string, UserUsageRecord>,
-): APIEmbed {
+): RichMessage {
   const uptime = Date.now() - stats.bootedAt.getTime();
 
-  const fields: APIEmbed['fields'] = [
+  const fields: RichMessage['fields'] = [
     { name: '⏱️ Uptime', value: formatDuration(uptime), inline: true },
     { name: '📊 Total Sessions', value: `${stats.totalSessions}`, inline: true },
     { name: '🔄 Active Sessions', value: `${activeSessions.size}`, inline: true },
@@ -579,7 +577,7 @@ export function buildGlobalStatusEmbed(
 
   return {
     color: COLORS.Info,
-    author: { name: '📋 Bot Status' },
+    author: '📋 Bot Status',
     title: 'Discord Claude Bot',
     fields,
     timestamp: new Date().toISOString(),
@@ -593,10 +591,10 @@ export function buildGlobalStatusEmbed(
  * @param promptText - Retry prompt text
  * @returns Retry confirmation embed
  */
-export function buildRetryEmbed(promptText: string): APIEmbed {
+export function buildRetryEmbed(promptText: string): RichMessage {
   return {
     color: COLORS.SessionStart,
-    author: { name: '🔄 Retry' },
+    author: '🔄 Retry',
     title: 'Retrying task',
     description: truncate(promptText, 4000),
     timestamp: new Date().toISOString(),
@@ -614,7 +612,7 @@ export function buildRetryEmbed(promptText: string): APIEmbed {
 export function buildAskUserQuestionEmbed(
   toolInput: Record<string, unknown>,
   _cwd: string,
-): APIEmbed {
+): RichMessage {
   const questions = toolInput.questions as Array<{
     question?: string;
     header?: string;
@@ -624,7 +622,7 @@ export function buildAskUserQuestionEmbed(
   if (!questions || questions.length === 0) {
     return {
       color: COLORS.Permission,
-      author: { name: '❓ Claude Question' },
+      author: '❓ Claude Question',
       title: 'Waiting for user response',
       timestamp: new Date().toISOString(),
     };
@@ -643,10 +641,10 @@ export function buildAskUserQuestionEmbed(
 
   return {
     color: COLORS.Permission,
-    author: { name: '❓ Claude Question' },
+    author: '❓ Claude Question',
     title: 'Select an option below',
     description: truncate(description, 4000),
-    footer: { text: 'Click a button to select, or click "Other" for a custom answer' },
+    footer: 'Click a button to select, or click "Other" for a custom answer',
     timestamp: new Date().toISOString(),
   };
 }
@@ -658,7 +656,7 @@ export function buildAskUserQuestionEmbed(
  * @param askState - Current ask state (containing question list, answered content, progress)
  * @returns Single question step embed
  */
-export function buildAskQuestionStepEmbed(askState: AskState): APIEmbed {
+export function buildAskQuestionStepEmbed(askState: AskState): RichMessage {
   const { currentQuestionIndex, totalQuestions, questions, collectedAnswers } = askState;
   const q = questions[currentQuestionIndex];
 
@@ -695,10 +693,10 @@ export function buildAskQuestionStepEmbed(askState: AskState): APIEmbed {
 
   return {
     color: COLORS.Permission,
-    author: { name: `❓ Claude Question${progressText ? ` — ${progressText}` : ''}` },
+    author: `❓ Claude Question${progressText ? ` — ${progressText}` : ''}`,
     title: q.header || 'Select an option below',
     description: truncate(description, 4000),
-    footer: { text: footerText },
+    footer: footerText,
     timestamp: new Date().toISOString(),
   };
 }
@@ -708,7 +706,7 @@ export function buildAskQuestionStepEmbed(askState: AskState): APIEmbed {
  * @param askState - Completed ask state (containing all answered content)
  * @returns Answered summary embed
  */
-export function buildAskCompletedEmbed(askState: AskState): APIEmbed {
+export function buildAskCompletedEmbed(askState: AskState): RichMessage {
   const summary = Object.entries(askState.collectedAnswers)
     .map(([idx, answer]) => {
       const q = askState.questions[parseInt(idx, 10)];
@@ -718,7 +716,7 @@ export function buildAskCompletedEmbed(askState: AskState): APIEmbed {
 
   return {
     color: COLORS.WaitingInput,
-    author: { name: '✅ All questions answered' },
+    author: '✅ All questions answered',
     description: summary,
     timestamp: new Date().toISOString(),
   };
@@ -731,10 +729,10 @@ export function buildAskCompletedEmbed(askState: AskState): APIEmbed {
  * @param idleMs - Duration of inactivity in milliseconds
  * @returns Idle session cleanup notification embed
  */
-export function buildIdleCleanupEmbed(idleMs: number): APIEmbed {
+export function buildIdleCleanupEmbed(idleMs: number): RichMessage {
   return {
     color: COLORS.Info,
-    author: { name: '🕐 Session Timeout' },
+    author: '🕐 Session Timeout',
     description: `This session was auto-archived after **${formatDuration(idleMs)}** of inactivity.\nUse \`/prompt\` to start a new session.`,
     timestamp: new Date().toISOString(),
   };
@@ -746,10 +744,10 @@ export function buildIdleCleanupEmbed(idleMs: number): APIEmbed {
  * Notify orphan threads when bot restarts
  * @returns Orphan thread cleanup notification embed
  */
-export function buildOrphanCleanupEmbed(): APIEmbed {
+export function buildOrphanCleanupEmbed(): RichMessage {
   return {
     color: COLORS.Notification,
-    author: { name: '⚠️ Bot Restarted' },
+    author: '⚠️ Bot Restarted',
     description: 'This session was interrupted. Use `/prompt` to start a new task.',
     timestamp: new Date().toISOString(),
   };
@@ -764,10 +762,10 @@ export function buildOrphanCleanupEmbed(): APIEmbed {
  * @param cwd - Working directory
  * @returns Queued notification embed
  */
-export function buildQueuedEmbed(position: number, promptText: string, cwd: string): APIEmbed {
+export function buildQueuedEmbed(position: number, promptText: string, cwd: string): RichMessage {
   return {
     color: COLORS.Info,
-    author: { name: '📋 Queued' },
+    author: '📋 Queued',
     title: `Position #${position} in queue`,
     description: truncate(promptText, 3900),
     fields: [
@@ -783,10 +781,10 @@ export function buildQueuedEmbed(position: number, promptText: string, cwd: stri
  * @param promptText - The prompt text
  * @returns Queue start notification embed
  */
-export function buildQueueStartEmbed(promptText: string): APIEmbed {
+export function buildQueueStartEmbed(promptText: string): RichMessage {
   return {
     color: COLORS.SessionStart,
-    author: { name: '🚀 Queue → Running' },
+    author: '🚀 Queue → Running',
     title: 'Your queued task is now starting',
     description: truncate(promptText, 3900),
     timestamp: new Date().toISOString(),
@@ -802,13 +800,13 @@ export function buildQueueStartEmbed(promptText: string): APIEmbed {
  * @param startedAt - ISO 8601 string of when session started
  * @returns Recovery notification embed
  */
-export function buildRecoveryEmbed(promptText: string, cwd: string, startedAt: string): APIEmbed {
+export function buildRecoveryEmbed(promptText: string, cwd: string, startedAt: string): RichMessage {
   const started = new Date(startedAt);
   const elapsed = Date.now() - started.getTime();
 
   return {
     color: COLORS.Notification,
-    author: { name: '🔄 Session Interrupted' },
+    author: '🔄 Session Interrupted',
     title: 'Bot restarted — session was interrupted',
     description: truncate(promptText, 3900),
     fields: [
@@ -827,7 +825,7 @@ export function buildRecoveryEmbed(promptText: string, cwd: string, startedAt: s
  * @param diff - Git diff summary data
  * @returns Git diff summary embed
  */
-export function buildGitSummaryEmbed(diff: GitDiffSummary): APIEmbed {
+export function buildGitSummaryEmbed(diff: GitDiffSummary): RichMessage {
   const fileList = diff.files
     .slice(0, 15)
     .map((f) => `\`${f.path}\` | +${f.insertions} -${f.deletions}`)
@@ -835,7 +833,7 @@ export function buildGitSummaryEmbed(diff: GitDiffSummary): APIEmbed {
 
   return {
     color: COLORS.Info,
-    author: { name: '📊 Git Changes' },
+    author: '📊 Git Changes',
     title: `${diff.filesChanged} file${diff.filesChanged === 1 ? '' : 's'} changed, +${diff.insertions} -${diff.deletions}`,
     description: fileList || 'No details available',
     timestamp: new Date().toISOString(),
@@ -849,7 +847,7 @@ export function buildGitSummaryEmbed(diff: GitDiffSummary): APIEmbed {
  * @param warnings - Array of budget warnings
  * @returns Budget warning embed
  */
-export function buildBudgetWarningEmbed(warnings: BudgetWarning[]): APIEmbed {
+export function buildBudgetWarningEmbed(warnings: BudgetWarning[]): RichMessage {
   const lines = warnings.map((w) => {
     const emoji = w.percentage >= 100 ? '🚫' : '⚠️';
     return `${emoji} **${w.period}** — ${formatCost(w.spent)} / ${formatCost(w.limit)} (${w.percentage.toFixed(0)}%)`;
@@ -857,7 +855,7 @@ export function buildBudgetWarningEmbed(warnings: BudgetWarning[]): APIEmbed {
 
   return {
     color: warnings.some((w) => w.percentage >= 100) ? COLORS.Error : COLORS.Notification,
-    author: { name: '💰 Budget Warning' },
+    author: '💰 Budget Warning',
     description: lines.join('\n'),
     timestamp: new Date().toISOString(),
   };
